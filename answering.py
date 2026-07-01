@@ -254,6 +254,50 @@ def handle_text_inputs(driver: WebDriver, answer: str) -> bool:
             driver.execute_script("arguments[0].click();", field)
             time.sleep(1.0)
             
+            # If this is a MathQuill field, try writing the LaTeX value directly using JavaScript
+            classes = field.get_attribute("class") or ""
+            is_mathquill = "mq-editable-field" in classes or "lrn-formula-input" in classes
+            if is_mathquill:
+                js_write_latex = """
+                function setMathQuillLatex(el, latex) {
+                    try {
+                        if (typeof MQ !== 'undefined' && MQ.MathField) {
+                            let mf = MQ.MathField(el);
+                            if (mf) {
+                                mf.latex(latex);
+                                return true;
+                            }
+                        }
+                        if (typeof jQuery !== 'undefined') {
+                            let $el = jQuery(el);
+                            let mq = $el.data('MathQuill');
+                            if (mq) {
+                                if (typeof mq.latex === 'function') {
+                                    mq.latex(latex);
+                                    return true;
+                                }
+                                if (mq.__controller && typeof mq.__controller.write === 'function') {
+                                    mq.__controller.write(latex);
+                                    return true;
+                                }
+                            }
+                            if (typeof $el.mathquill === 'function') {
+                                $el.mathquill('latex', latex);
+                                return true;
+                            }
+                        }
+                    } catch(e) {
+                        console.error('Error setting MathQuill LaTeX:', e);
+                    }
+                    return false;
+                }
+                return setMathQuillLatex(arguments[0], arguments[1]);
+                """
+                latex_success = driver.execute_script(js_write_latex, field, answer)
+                if latex_success:
+                    log.info("Successfully wrote LaTeX '%s' via MathQuill JS API", answer)
+                    continue
+            
             # Check if there are visible keypad buttons on the page
             buttons = driver.find_elements(By.TAG_NAME, "button")
             keypad_btns = [b for b in buttons if is_keypad_button(b)]
