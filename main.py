@@ -16,6 +16,7 @@
 
 import sys
 import time
+from typing import Optional
 
 # Windows terminal: ensure UTF-8 output
 if hasattr(sys.stdout, "reconfigure"):
@@ -62,7 +63,7 @@ def run_automation() -> None:
     # Step 1 – Get inputs from user first
     topic_name = prompt_topic_name()
 
-    driver: WebDriver | None = None
+    driver: Optional[WebDriver] = None
 
     try:
         # Step 2 – Browser setup and dashboard navigation
@@ -397,7 +398,7 @@ def extract_screenshots_for_worksheet(topic_name: str, target_ws_id: str, headle
             print(msg)
         log.info(msg)
 
-    driver: WebDriver | None = None
+    driver: Optional[WebDriver] = None
 
     try:
         log_msg(f"Launching browser (headless={headless})...")

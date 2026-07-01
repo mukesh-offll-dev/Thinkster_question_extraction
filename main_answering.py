@@ -9,6 +9,7 @@ import sys
 import os
 import time
 import json
+from typing import Optional
 
 # Windows terminal: ensure UTF-8 output
 if hasattr(sys.stdout, "reconfigure"):
@@ -53,7 +54,7 @@ _BANNER = """
 # Core pipeline
 # ---------------------------------------------------------------------------
 
-def load_answers_from_db(worksheet_id: str) -> dict | None:
+def load_answers_from_db(worksheet_id: str) -> Optional[dict]:
     """
     Attempts to retrieve answers for the given worksheet_id from MongoDB.
     Returns a dictionary formatted like: {"1": "A", "2": "5", "3": ["True", "True"]} or None if not found/error.
@@ -144,7 +145,7 @@ def run_automation() -> None:
             
         answers = answers_dict[target_ws_id]
 
-    driver: WebDriver | None = None
+    driver: Optional[WebDriver] = None
 
     try:
         # Browser setup and dashboard navigation
@@ -491,7 +492,7 @@ def run_answering_for_worksheet(topic_name: str, target_ws_id: str, headless: bo
             return False
         answers = answers_dict[target_ws_id]
 
-    driver: WebDriver | None = None
+    driver: Optional[WebDriver] = None
 
     try:
         log_msg(f"Launching browser (headless={headless})...")

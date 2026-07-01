@@ -5,6 +5,7 @@
 import os
 import time
 import json
+from typing import Optional
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.remote.webelement import WebElement
@@ -360,7 +361,7 @@ def handle_text_inputs(driver: WebDriver, answer: str) -> bool:
             
     return True
 
-def extract_website_correct_answer(driver: WebDriver) -> str | None:
+def extract_website_correct_answer(driver: WebDriver) -> Optional[str]:
     """Attempt to extract the correct answer displayed by the website (Learnosity)."""
     selectors = [
         ".lrn_correctAnswerList",
