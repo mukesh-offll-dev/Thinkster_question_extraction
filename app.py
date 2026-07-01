@@ -224,6 +224,20 @@ def run_pipeline_in_background(topic_name, worksheet_id, skip_extraction):
             })
 
     # Step 1: Screenshot Extraction
+    # Auto-detect: if screenshots already exist for this worksheet, skip extraction entirely
+    screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshots")
+    ws_dir_check = os.path.join(screenshots_dir, worksheet_id)
+    existing_screenshots = []
+    if os.path.isdir(ws_dir_check):
+        existing_screenshots = [
+            f for f in os.listdir(ws_dir_check)
+            if f.lower().startswith("question_") and f.lower().endswith(".png")
+        ]
+
+    if existing_screenshots:
+        log_callback(f"✅ Found {len(existing_screenshots)} existing screenshot(s) for '{worksheet_id}'. Skipping extraction.")
+        skip_extraction = True
+
     if not skip_extraction:
         log_callback("Starting screenshot extraction phase (headless mode)...")
         try:
@@ -242,8 +256,6 @@ def run_pipeline_in_background(topic_name, worksheet_id, skip_extraction):
     else:
         log_callback("Skipping screenshot extraction phase. Using existing images.")
 
-    # Write topic.txt so save_ws_answers can find it
-    screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshots")
     ws_dir = os.path.join(screenshots_dir, worksheet_id)
     if not os.path.exists(ws_dir):
         log_callback(f"[ERROR] Screenshots directory for worksheet '{worksheet_id}' does not exist: {ws_dir}")
