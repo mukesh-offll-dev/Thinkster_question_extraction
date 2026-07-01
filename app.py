@@ -736,6 +736,11 @@ def index():
 def reports():
     return render_template("reports.html")
 
+@app.route("/answering")
+def answering_page():
+    return render_template("answering.html")
+
+
 @app.route("/reports/<worksheet_id>")
 def worksheet_details(worksheet_id):
     return render_template("worksheet_details.html", worksheet_id=worksheet_id)

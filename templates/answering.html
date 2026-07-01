@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Answer Worksheet - Thinkster Math Automation</title>
+    <meta name="description" content="Run automated worksheet answering against the Thinkster platform.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary:       #1F2937;
+            --primary-dark:  #111827;
+            --primary-soft:  #F3F4F6;
+            --accent:        #4F46E5;
+            --accent-light:  #EEF2FF;
+            --success:       #10B981;
+            --success-light: #D1FAE5;
+            --danger:        #EF4444;
+            --danger-light:  #FEE2E2;
+            --warning:       #F59E0B;
+            --warning-light: #FEF3C7;
+            --text-dark:     #111827;
+            --text-mid:      #374151;
+            --text-muted:    #6B7280;
+            --bg:            #F9FAFB;
+            --surface:       #FFFFFF;
+            --surface-2:     #F9FAFB;
+            --border:        #E5E7EB;
+            --shadow-sm:     0 1px 3px rgba(0,0,0,0.05);
+            --shadow-md:     0 4px 12px rgba(0,0,0,0.08);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text-dark);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Header ─────────────────────────────────────────────────── */
+        header {
+            background: #fff;
+            border-bottom: 2px solid var(--border);
+            padding: 0 40px;
+            height: 72px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: var(--shadow-sm);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo-section { display: flex; align-items: center; gap: 14px; }
+        .logo-img { height: 44px; width: auto; object-fit: contain; border-radius: 6px; }
+        .divider-v { width: 1px; height: 36px; background: var(--border); }
+        .logo-section h1 { font-size: 19px; font-weight: 800; color: #111827; letter-spacing: -0.3px; }
+        .logo-section h1 span { display: block; font-size: 10px; font-weight: 500; color: var(--text-muted); letter-spacing: 1.5px; text-transform: uppercase; margin-top: 1px; }
+
+        .nav-links { display: flex; gap: 6px; align-items: center; }
+        .nav-link {
+            font-size: 13px; font-weight: 600; color: var(--text-muted);
+            text-decoration: none; padding: 7px 14px; border-radius: 8px;
+            transition: background 0.15s, color 0.15s;
+        }
+        .nav-link:hover { background: var(--primary-soft); color: var(--text-dark); }
+        .nav-link.active { background: var(--accent-light); color: var(--accent); }
+
+        /* ── Buttons ─────────────────────────────────────────────────── */
+        .btn {
+            font-family: inherit; font-weight: 600; font-size: 13px;
+            padding: 9px 18px; border-radius: 8px; border: 1.5px solid transparent;
+            cursor: pointer; transition: all 0.18s ease;
+            display: inline-flex; align-items: center; gap: 7px;
+            white-space: nowrap; text-decoration: none;
+        }
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none !important; }
+        .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 2px 8px rgba(79,70,229,0.25); }
+        .btn-primary:hover:not(:disabled) { background: #4338CA; border-color: #4338CA; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(79,70,229,0.35); }
+        .btn-danger  { background: var(--danger); color: #fff; border-color: var(--danger); }
+        .btn-danger:hover:not(:disabled)  { background: #B91C1C; transform: translateY(-1px); }
+        .btn-secondary { background: var(--surface); border-color: var(--border); color: var(--text-mid); }
+        .btn-secondary:hover:not(:disabled) { background: var(--primary-soft); color: var(--text-dark); transform: translateY(-1px); }
+
+        /* ── Main layout ─────────────────────────────────────────────── */
+        .page-wrapper {
+            max-width: 1100px;
+            margin: 36px auto;
+            padding: 0 24px;
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 24px;
+            align-items: start;
+        }
+
+        /* ── Cards ───────────────────────────────────────────────────── */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            box-shadow: var(--shadow-sm);
+        }
+        .card-header {
+            padding: 18px 24px 14px;
+            border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .card-header h2 { font-size: 14px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.6px; }
+        .card-body { padding: 20px 24px; }
+
+        /* ── Form ────────────────────────────────────────────────────── */
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        select, input[type="text"] {
+            font-family: inherit; font-size: 13px; padding: 9px 12px;
+            border-radius: 8px; border: 1.5px solid var(--border);
+            background: var(--surface); color: var(--text-dark);
+            outline: none; transition: border-color 0.2s; width: 100%;
+        }
+        select:focus, input[type="text"]:focus { border-color: var(--accent); }
+
+        .toggle-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+        .toggle-label { font-size: 13px; color: var(--text-mid); cursor: pointer; user-select: none; }
+
+        /* ── Action bar ──────────────────────────────────────────────── */
+        .action-bar {
+            display: flex; align-items: center; gap: 10px;
+            padding: 16px 24px; border-top: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+
+        /* ── Status badge ────────────────────────────────────────────── */
+        .status-pill {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+        }
+        .status-pill.idle     { background: var(--primary-soft); color: var(--text-muted); }
+        .status-pill.running  { background: #EFF6FF; color: #1D4ED8; }
+        .status-pill.done     { background: var(--success-light); color: #065F46; }
+        .status-pill.failed   { background: var(--danger-light); color: #991B1B; }
+
+        .spinner {
+            width: 12px; height: 12px;
+            border: 2px solid currentColor; border-top-color: transparent;
+            border-radius: 50%; animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Log panel ───────────────────────────────────────────────── */
+        .log-panel { height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 16px 20px; }
+        .log-item {
+            border-radius: 8px; padding: 10px 14px;
+            border-left: 3px solid transparent; font-size: 12px;
+            animation: fadeIn 0.2s ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+        .log-ok     { background: #F0FDF4; border-color: var(--success); }
+        .log-error  { background: var(--danger-light); border-color: var(--danger); }
+        .log-info   { background: var(--primary-soft); border-color: #D1D5DB; }
+        .log-ts     { font-size: 10px; color: var(--text-muted); margin-bottom: 3px; }
+        .log-msg    { color: var(--text-dark); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+
+        .log-empty  {
+            flex: 1; display: flex; align-items: center; justify-content: center;
+            flex-direction: column; gap: 10px; color: var(--text-muted); text-align: center; padding: 40px;
+        }
+
+        /* ── Sidebar ─────────────────────────────────────────────────── */
+        .sidebar { display: flex; flex-direction: column; gap: 16px; }
+        .info-list { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+        .info-list li { display: flex; flex-direction: column; gap: 2px; }
+        .info-list .lbl { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .info-list .val { font-size: 14px; font-weight: 700; color: var(--text-dark); }
+
+        /* ── Toast ───────────────────────────────────────────────────── */
+        .toast {
+            position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+            background: #1F2937; color: #fff; padding: 12px 20px; border-radius: 10px;
+            font-size: 13px; font-weight: 500; opacity: 0; pointer-events: none;
+            transition: opacity 0.25s ease; box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+        }
+        .toast.show { opacity: 1; }
+
+        @media (max-width: 768px) {
+            .page-wrapper { grid-template-columns: 1fr; }
+            .form-grid { grid-template-columns: 1fr; }
+            header { padding: 0 16px; }
+            .nav-links { gap: 2px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header>
+        <div class="logo-section">
+            <img src="/logo" alt="Thinkster Logo" class="logo-img">
+            <div class="divider-v"></div>
+            <h1>Thinkster Math<span>Automation Testing</span></h1>
+        </div>
+        <nav class="nav-links">
+            <a href="/"         class="nav-link">AI Analysis</a>
+            <a href="/answering" class="nav-link active">Answer Worksheet</a>
+            <a href="/reports"  class="nav-link">Reports</a>
+        </nav>
+    </header>
+
+    <!-- Main -->
+    <div class="page-wrapper">
+
+        <!-- Left column -->
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+
+            <!-- Config card -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>🤖 Answer Worksheet Configuration</h2>
+                    <span id="statusPill" class="status-pill idle">Idle</span>
+                </div>
+                <div class="card-body">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="topicSelect">Topic Name</label>
+                            <select id="topicSelect" onchange="toggleManual()">
+                                <option value="Complex Numbers">Complex Numbers</option>
+                                <option value="Algebra 2 Foundations">Algebra 2 Foundations</option>
+                                <option value="Number Representation">Number Representation</option>
+                                <option value="Number Relation">Number Relation</option>
+                                <option value="Algebra">Algebra</option>
+                                <option value="Functions &amp; Function Notation">Functions &amp; Function Notation</option>
+                                <option value="Multiplication">Multiplication</option>
+                                <option value="Division">Division</option>
+                                <option value="Geometry">Geometry</option>
+                                <option value="__manual__">Enter manually…</option>
+                            </select>
+                            <input id="topicManual" type="text" placeholder="Type topic name…" style="display:none; margin-top:8px;">
+                        </div>
+                        <div class="form-group">
+                            <label for="worksheetId">Worksheet ID</label>
+                            <input id="worksheetId" type="text" placeholder="e.g. AQFFNAL210">
+                        </div>
+                    </div>
+
+                    <div class="toggle-row" style="margin-top: 16px;">
+                        <input type="checkbox" id="headlessToggle" style="cursor:pointer; width:15px; height:15px;">
+                        <label for="headlessToggle" class="toggle-label">Run headless (no visible browser window)</label>
+                    </div>
+                </div>
+
+                <div class="action-bar">
+                    <button id="runBtn"  class="btn btn-primary"  onclick="startAnswering()">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        Run Answering
+                    </button>
+                    <button id="stopBtn" class="btn btn-danger"   onclick="stopAnswering()" style="display:none;">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"/></svg>
+                        Stop
+                    </button>
+                    <div style="flex:1;"></div>
+                    <a href="/reports" class="btn btn-secondary">View Reports</a>
+                </div>
+            </div>
+
+            <!-- Live log card -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>📋 Live Execution Log</h2>
+                    <div id="spinner" style="display:none;" class="spinner" style="color:#1D4ED8;"></div>
+                </div>
+                <div id="logPanel" class="log-panel">
+                    <div class="log-empty">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:.3;">
+                            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                        </svg>
+                        <p style="font-size:14px; font-weight:500;">No run active</p>
+                        <small style="font-size:12px; opacity:.7;">Click "Run Answering" to start</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right sidebar -->
+        <div class="sidebar">
+            <div class="card">
+                <div class="card-header"><h2>📊 Run Details</h2></div>
+                <div class="card-body">
+                    <ul class="info-list">
+                        <li><span class="lbl">Worksheet</span><span class="val" id="siWs">—</span></li>
+                        <li><span class="lbl">Topic</span><span class="val" id="siTopic">—</span></li>
+                        <li><span class="lbl">Status</span><span class="val" id="siStatus">Idle</span></li>
+                        <li><span class="lbl">Start Time</span><span class="val" id="siStart">—</span></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h2>⚡ Quick Actions</h2></div>
+                <div class="card-body" style="display:flex; flex-direction:column; gap:10px;">
+                    <button class="btn btn-secondary" style="justify-content:flex-start;" onclick="goToCheckPage()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                        Verify Answers (Check Page)
+                    </button>
+                    <a href="/" class="btn btn-secondary" style="justify-content:flex-start;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                        AI Analysis Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        let pollTimer = null;
+        let lastLogCount = 0;
+        let runStartTime = null;
+
+        // ── Topic manual toggle ──────────────────────────────────────
+        function toggleManual() {
+            const sel = document.getElementById('topicSelect');
+            const manual = document.getElementById('topicManual');
+            manual.style.display = sel.value === '__manual__' ? 'block' : 'none';
+        }
+
+        function getTopicName() {
+            const sel = document.getElementById('topicSelect');
+            if (sel.value === '__manual__') return document.getElementById('topicManual').value.trim();
+            return sel.value;
+        }
+
+        // ── Quick action helper ───────────────────────────────────────
+        function goToCheckPage() {
+            const wsId = document.getElementById('worksheetId').value.trim();
+            if (!wsId) { toast('⚠️ Enter a Worksheet ID first.', '#B45309'); return; }
+            window.location.href = `/check/${encodeURIComponent(wsId)}`;
+        }
+
+        // ── Start answering ───────────────────────────────────────────
+        function startAnswering() {
+            const wsId     = document.getElementById('worksheetId').value.trim();
+            const topic    = getTopicName();
+            const headless = document.getElementById('headlessToggle').checked;
+
+            if (!wsId)   { toast('⚠️ Worksheet ID is required.', '#B45309'); return; }
+            if (!topic)  { toast('⚠️ Topic Name is required.', '#B45309');   return; }
+
+            fetch('/api/run_answering', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ worksheet_id: wsId, topic_name: topic, headless })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) { toast('❌ ' + data.error, '#C62828'); return; }
+                toast('✅ Answering started!', '#1565C0');
+                runStartTime = new Date().toLocaleTimeString();
+                lastLogCount = 0;
+                clearLog();
+                setRunning(true);
+                document.getElementById('siWs').textContent    = wsId;
+                document.getElementById('siTopic').textContent = topic;
+                document.getElementById('siStart').textContent = runStartTime;
+                startPolling();
+            })
+            .catch(() => toast('❌ Failed to reach server.', '#C62828'));
+        }
+
+        // ── Stop (no API currently — just visual reset after completion) ──
+        function stopAnswering() {
+            // The answering run is browser-driven; stopping mid-run isn't yet wired up.
+            // For now just show a note.
+            toast('ℹ️ Stop is not yet supported for answering runs. Wait for completion or close the server.', '#374151', 5000);
+        }
+
+        // ── Polling ───────────────────────────────────────────────────
+        function startPolling() {
+            if (pollTimer) clearInterval(pollTimer);
+            pollTimer = setInterval(poll, 1000);
+            poll();
+        }
+
+        function poll() {
+            fetch('/api/answering/status')
+                .then(r => r.json())
+                .then(state => {
+                    appendLogs(state.logs || []);
+                    updateStatus(state.status);
+
+                    const done = state.status === 'Completed' || state.status === 'Failed';
+                    if (done) {
+                        clearInterval(pollTimer);
+                        pollTimer = null;
+                        setRunning(false);
+                        if (state.status === 'Completed') toast('✅ Answering completed!', '#2E7D32');
+                        else toast('❌ Answering failed. Check logs.', '#C62828');
+                    }
+                })
+                .catch(() => {});
+        }
+
+        // ── Helpers ───────────────────────────────────────────────────
+        function appendLogs(logs) {
+            if (logs.length <= lastLogCount) return;
+            const panel = document.getElementById('logPanel');
+            // Remove empty placeholder
+            const empty = panel.querySelector('.log-empty');
+            if (empty) empty.remove();
+
+            for (let i = lastLogCount; i < logs.length; i++) {
+                const entry = logs[i];
+                const msg   = entry.message || '';
+                const ts    = entry.timestamp || '';
+                const isErr = msg.toLowerCase().includes('[error]') || msg.startsWith('❌');
+                const isOk  = msg.startsWith('✅') || msg.toLowerCase().includes('completed') || msg.toLowerCase().includes('success');
+
+                const div = document.createElement('div');
+                div.className = 'log-item ' + (isErr ? 'log-error' : isOk ? 'log-ok' : 'log-info');
+                div.innerHTML = `<div class="log-ts">${escHtml(ts)}</div><div class="log-msg">${escHtml(msg)}</div>`;
+                panel.appendChild(div);
+            }
+            lastLogCount = logs.length;
+            panel.scrollTop = panel.scrollHeight;
+        }
+
+        function clearLog() {
+            const panel = document.getElementById('logPanel');
+            panel.innerHTML = `<div class="log-empty">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:.3;">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <p style="font-size:14px;font-weight:500;">Starting run…</p>
+            </div>`;
+        }
+
+        function setRunning(running) {
+            document.getElementById('runBtn').style.display  = running ? 'none' : 'inline-flex';
+            document.getElementById('stopBtn').style.display = running ? 'inline-flex' : 'none';
+            document.getElementById('spinner').style.display = running ? 'inline-block' : 'none';
+            document.getElementById('runBtn').disabled = running;
+        }
+
+        function updateStatus(status) {
+            const pill = document.getElementById('statusPill');
+            const si   = document.getElementById('siStatus');
+            pill.className = 'status-pill';
+            if      (status === 'Processing') { pill.classList.add('running'); pill.innerHTML = '<div class="spinner"></div> Running'; }
+            else if (status === 'Completed')  { pill.classList.add('done');    pill.textContent = '✅ Completed'; }
+            else if (status === 'Failed')     { pill.classList.add('failed');  pill.textContent = '❌ Failed'; }
+            else                              { pill.classList.add('idle');    pill.textContent = 'Idle'; }
+            si.textContent = status || 'Idle';
+        }
+
+        function toast(msg, color, duration = 3500) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.style.background = color || '#1F2937';
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), duration);
+        }
+
+        function escHtml(t) {
+            if (!t) return '';
+            return t.toString()
+                .replace(/&/g,  '&amp;')
+                .replace(/</g,  '&lt;')
+                .replace(/>/g,  '&gt;')
+                .replace(/"/g,  '&quot;')
+                .replace(/'/g,  '&#039;');
+        }
+
+        // On load: check if there's already an active answering run
+        window.addEventListener('DOMContentLoaded', () => {
+            fetch('/api/answering/status')
+                .then(r => r.json())
+                .then(state => {
+                    if (state.status === 'Processing') {
+                        document.getElementById('siWs').textContent    = state.worksheet_id || '—';
+                        document.getElementById('siTopic').textContent = state.topic_name   || '—';
+                        setRunning(true);
+                        startPolling();
+                        toast('ℹ️ Answering already in progress — reconnected.', '#374151', 4000);
+                    }
+                })
+                .catch(() => {});
+        });
+    </script>
+</body>
+</html>
