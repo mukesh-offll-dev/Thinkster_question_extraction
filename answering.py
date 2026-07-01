@@ -201,6 +201,38 @@ def handle_matrix(driver: WebDriver, answers: list) -> bool:
     return True
 
 
+def is_keypad_button(btn: WebElement) -> bool:
+    """Return True if the button is part of a virtual math/text keypad."""
+    try:
+        if not btn.is_displayed():
+            return False
+        
+        # Keypad buttons are never in the top header area (which is y < 250)
+        rect = btn.rect
+        if not rect or rect.get('y', 0) < 250:
+            return False
+            
+        classes = (btn.get_attribute("class") or "").lower()
+        if "rounded-full" in classes:
+            return False
+            
+        parent_classes = ""
+        try:
+            parent = btn.find_element(By.XPATH, "..")
+            parent_classes = parent.get_attribute("class") or ""
+            gp = parent.find_element(By.XPATH, "..")
+            parent_classes += " " + (gp.get_attribute("class") or "")
+        except Exception:
+            pass
+            
+        combined = (classes + " " + parent_classes).lower()
+        if any(k in combined for k in ["keypad", "keyboard", "palette", "formula", "math", "lrn-key", "lrn_btn_grid"]):
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def handle_text_inputs(driver: WebDriver, answer: str) -> bool:
     """Type answer into text input boxes and handle custom keypads if shown."""
     # 1. Look for visible editable math fields (e.g. MathQuill)
@@ -222,55 +254,66 @@ def handle_text_inputs(driver: WebDriver, answer: str) -> bool:
             driver.execute_script("arguments[0].click();", field)
             time.sleep(1.0)
             
-            # If it is a standard input, try typing directly
-            if field.tag_name in ("input", "textarea"):
-                try:
-                    field.clear()
-                    field.send_keys(answer)
-                except Exception:
-                    pass
-            else:
-                # MathQuill editable field: try to find its nested textarea
-                try:
-                    ta = field.find_element(By.TAG_NAME, "textarea")
-                    driver.execute_script("arguments[0].focus();", ta)
-                    ta.send_keys(answer)
-                except Exception:
-                    pass
-        except Exception as e:
-            log.warning("Failed standard focus/input: %s", e)
+            # Check if there are visible keypad buttons on the page
+            buttons = driver.find_elements(By.TAG_NAME, "button")
+            keypad_btns = [b for b in buttons if is_keypad_button(b)]
             
-    # Try custom keypad clicks
-    keypad_buttons = driver.find_elements(By.CSS_SELECTOR, "[class*='keypad'] button, [class*='keyboard'] button, .lrn-math-palette button, button.lrn-key, button.lrn_btn_grid")
-    visible_kb_btns = [b for b in keypad_buttons if b.is_displayed()]
-    
-    if visible_kb_btns and len(answer) > 0:
-        log.info("On-screen keypad detected. Typing '%s'...", answer)
-        for char in answer:
-            clicked = False
-            for btn in visible_kb_btns:
-                try:
-                    # Clean up the button text to match characters
-                    btn_text = btn.text.strip().split('\n')[0].strip().lower()
-                    if btn_text == char.lower():
-                        driver.execute_script("arguments[0].click();", btn)
-                        time.sleep(0.2)
-                        clicked = True
-                        break
-                except Exception:
-                    pass
-            if not clicked:
-                # Special character mapping fallback (e.g. fraction slash /)
-                for btn in visible_kb_btns:
+            if keypad_btns and len(answer) > 0:
+                log.info("On-screen keypad detected. Typing '%s' via keypad...", answer)
+                for char in answer:
+                    clicked = False
+                    for btn in keypad_btns:
+                        try:
+                            # Clean up the button text to match characters
+                            btn_text = btn.text.strip().split('\n')[0].strip().lower()
+                            if btn_text == char.lower():
+                                driver.execute_script("arguments[0].click();", btn)
+                                time.sleep(0.25)
+                                clicked = True
+                                break
+                        except Exception:
+                            pass
+                    if not clicked:
+                        # Special character mapping fallback (e.g. fraction slash /)
+                        for btn in keypad_btns:
+                            try:
+                                btn_text = btn.text.strip().lower()
+                                if char == "/" and ("fraction" in btn_text or "/" in btn_text or "÷" in btn_text):
+                                    driver.execute_script("arguments[0].click();", btn)
+                                    time.sleep(0.25)
+                                    clicked = True
+                                    break
+                            except Exception:
+                                pass
+                    if not clicked:
+                        # Fallback: type character via active element keyboard keys
+                        log.info("Character '%s' not found on keypad. Sending keys fallback.", char)
+                        try:
+                            active_el = driver.switch_to.active_element
+                            active_el.send_keys(char)
+                            time.sleep(0.25)
+                        except Exception:
+                            pass
+            else:
+                log.info("No keypad detected. Typing '%s' directly...", answer)
+                # If it is a standard input, try typing directly
+                if field.tag_name in ("input", "textarea"):
                     try:
-                        btn_text = btn.text.strip().lower()
-                        if char == "/" and ("fraction" in btn_text or "/" in btn_text or "÷" in btn_text):
-                            driver.execute_script("arguments[0].click();", btn)
-                            time.sleep(0.2)
-                            break
+                        field.clear()
+                        field.send_keys(answer)
                     except Exception:
                         pass
-                        
+                else:
+                    # MathQuill editable field: try to find its nested textarea
+                    try:
+                        ta = field.find_element(By.TAG_NAME, "textarea")
+                        driver.execute_script("arguments[0].focus();", ta)
+                        ta.send_keys(answer)
+                    except Exception:
+                        pass
+        except Exception as e:
+            log.warning("Failed input for field: %s", e)
+            
     return True
 
 # ---------------------------------------------------------------------------
