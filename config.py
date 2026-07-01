@@ -1,9 +1,14 @@
 # =============================================================================
 # config.py - Thinkster Elevate Automation Configuration
 # =============================================================================
+import os
+from dotenv import load_dotenv
 
-EMAIL    = "dvignesh4991_old@gmail.com"
-PASSWORD = "Apple@123"
+# Load environment variables from .env file
+load_dotenv()
+
+EMAIL    = os.getenv("THINKSTER_EMAIL", "dvignesh4991_old@gmail.com")
+PASSWORD = os.getenv("THINKSTER_PASSWORD", "Apple@123")
 
 # ---------------------------------------------------------------------------
 # Browser Settings
@@ -33,7 +38,7 @@ QUESTION_SETTLE_DELAY     = 0.5
 # ---------------------------------------------------------------------------
 # Student to Select
 # ---------------------------------------------------------------------------
-TARGET_STUDENT = "Thomas D"
+TARGET_STUDENT = os.getenv("TARGET_STUDENT", "Thomas D")
 
 # ---------------------------------------------------------------------------
 # Index File
@@ -45,7 +50,7 @@ ANSWERS_FILE = "worksheet_answers.json"
 # ---------------------------------------------------------------------------
 # Screenshots / Artifact Directory
 # ---------------------------------------------------------------------------
-SCREENSHOTS_DIR = "C:/Users/ELCOT/.gemini/antigravity-ide/brain/a1009690-e737-4b28-826b-cdfcee5e8dbc"
+SCREENSHOTS_DIR = os.getenv("SCREENSHOTS_DIR", "C:/Users/ELCOT/.gemini/antigravity-ide/brain/a1009690-e737-4b28-826b-cdfcee5e8dbc")
 
 
 # ---------------------------------------------------------------------------
@@ -73,10 +78,10 @@ RETRY_DELAY = 2
 #   "openrouter" - Many free models. Get key at: https://openrouter.ai
 #   "mistral"    - Mistral AI cloud. Get key at: https://console.mistral.ai
 
-AI_PROVIDER = "ollama"
+AI_PROVIDER = os.getenv("AI_PROVIDER", "ollama")
 
 # Zhipu AI / BigModel Key:
-AI_API_KEY = ""
+AI_API_KEY = os.getenv("AI_API_KEY", "")
 
 # Model name for the chosen provider:
 #   zhipu:      "glm-4-flash"  or  "glm-4"
@@ -84,7 +89,7 @@ AI_API_KEY = ""
 #   ollama:     "llama3"  or  "mistral"  or  "phi3"  or  "gpt-oss:120b"
 #   openrouter: "meta-llama/llama-3-8b-instruct:free"
 #   mistral:    "mistral-large-latest"
-AI_MODEL = "gpt-oss:120b"
+AI_MODEL = os.getenv("AI_MODEL", "qwen3.5:397b")
 
 AI_TIMEOUT = 60  # seconds per AI call
 
@@ -94,8 +99,8 @@ AI_TIMEOUT = 60  # seconds per AI call
 # Base URL for Ollama API:
 #   Local default: "http://localhost:11434"
 #   Cloud / Custom default: e.g. "https://ollama.com" or "https://ollama.com/api/generate"
-OLLAMA_BASE_URL = "https://ollama.com/api/generate"
-OLLAMA_API_KEY  = "7f1b819e47464844b7052601677ecb8e.k0oueSkr5PRznaG6skQk9TnC"
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "https://ollama.com")
+OLLAMA_API_KEY  = os.getenv("OLLAMA_API_KEY", "0c7664520257478d8880f66f99acd01c.eVrSvThIorHwwmOebPj5ZKGZ")
 
 # ---------------------------------------------------------------------------
 # Math Expert System Prompt
@@ -133,6 +138,6 @@ MATH_EXPERT_PROMPT = (
 # MongoDB Settings
 # ---------------------------------------------------------------------------
 # MongoDB connection URI (shared with the analysis component)
-MONGO_URI = "mongodb+srv://admin:admin123@cluster0.eu3cz1g.mongodb.net/?appName=Cluster0"
-MONGO_DB = "Thinkster_testing"
-MONGO_ANSWERS_COLLECTION = "WS_answers"
+MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://admin:admin123@cluster0.eu3cz1g.mongodb.net/?appName=Cluster0")
+MONGO_DB = os.getenv("MONGO_DB", "Thinkster_testing")
+MONGO_ANSWERS_COLLECTION = os.getenv("MONGO_ANSWERS_COLLECTION", "WS_answers")

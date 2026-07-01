@@ -5,6 +5,12 @@ import io
 import threading
 from datetime import datetime
 
+from dotenv import load_dotenv
+# Load environment variables
+load_dotenv()
+
+import config
+
 from ollama import Client
 from PIL import Image
 from flask import Flask, render_template, jsonify, request, Response, send_file
@@ -21,9 +27,8 @@ if hasattr(sys.stderr, 'reconfigure'):
 app = Flask(__name__)
 
 # MongoDB connection details
-MONGO_URI = "mongodb+srv://admin:admin123@cluster0.eu3cz1g.mongodb.net/?appName=Cluster0"
-mongo_client = MongoClient(MONGO_URI)
-db = mongo_client["Thinkster_testing"]
+mongo_client = MongoClient(config.MONGO_URI)
+db = mongo_client[config.MONGO_DB]
 collection = db["Worksheet_Report"]
 
 # Thread lock to safely modify and read the analysis state
@@ -60,7 +65,7 @@ def get_question_number(filename):
 
 def save_ws_answers(ws_id):
     try:
-        ws_answers_coll = db["WS_answers"]
+        ws_answers_coll = db[config.MONGO_ANSWERS_COLLECTION]
         
         # Read the topic name from topic.txt if it exists
         topic_name = "Unknown Topic"
@@ -287,12 +292,11 @@ def run_pipeline_in_background(topic_name, worksheet_id, skip_extraction):
     log_callback("Starting AI review and answer generation phase...")
     
     # Ollama Client setup
-    os.environ["OLLAMA_API_KEY"] = "0c7664520257478d8880f66f99acd01c.eVrSvThIorHwwmOebPj5ZKGZ"
-    MODEL_NAME = "qwen3.5:397b"
+    MODEL_NAME = config.AI_MODEL
     
     client = Client(
-        host="https://ollama.com",
-        headers={'Authorization': f"Bearer {os.getenv('OLLAMA_API_KEY')}"}
+        host=config.OLLAMA_BASE_URL,
+        headers={'Authorization': f"Bearer {config.OLLAMA_API_KEY}"}
     )
     
     completed_q_count = 0
@@ -515,12 +519,11 @@ def run_analysis_in_background():
         return
 
     # Ollama Client setup
-    os.environ["OLLAMA_API_KEY"] = "0c7664520257478d8880f66f99acd01c.eVrSvThIorHwwmOebPj5ZKGZ"
-    MODEL_NAME = "qwen3.5:397b"
+    MODEL_NAME = config.AI_MODEL
     
     client = Client(
-        host="https://ollama.com",
-        headers={'Authorization': f"Bearer {os.getenv('OLLAMA_API_KEY')}"}
+        host=config.OLLAMA_BASE_URL,
+        headers={'Authorization': f"Bearer {config.OLLAMA_API_KEY}"}
     )
     
     completed_q_count = 0
