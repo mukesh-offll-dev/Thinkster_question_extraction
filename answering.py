@@ -360,6 +360,35 @@ def handle_text_inputs(driver: WebDriver, answer: str) -> bool:
             
     return True
 
+def extract_website_correct_answer(driver: WebDriver) -> str | None:
+    """Attempt to extract the correct answer displayed by the website (Learnosity)."""
+    selectors = [
+        ".lrn_correctAnswerList",
+        ".lrn-correct-answer-list",
+        "[class*='correctAnswerList']",
+        "[class*='correct-answer-list']",
+        ".lrn-suggested-answer",
+        "[class*='suggested-answer']",
+        ".lrn_correct_answer",
+        "[class*='correct_answer']",
+    ]
+    for selector in selectors:
+        try:
+            elements = driver.find_elements(By.CSS_SELECTOR, selector)
+            for el in elements:
+                if el.is_displayed():
+                    text = el.text.strip()
+                    if text:
+                        # Clean up prefix like "Correct Answer:" if present
+                        for prefix in ["Correct Answer:", "Correct Answer", "Suggested Answer:", "Suggested Answer"]:
+                            if text.lower().startswith(prefix.lower()):
+                                text = text[len(prefix):].strip()
+                        return text
+        except Exception:
+            pass
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Main Workflow
 # ---------------------------------------------------------------------------
@@ -406,7 +435,12 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
         if q_answer is None:
             log.warning("No answer provided for Question %d. Skipping input.", q_no)
             print(f"-> Warning: No answer found in JSON for Question {q_no}.")
-            results[q_no] = "skipped"
+            results[q_no] = {
+                "status": "skipped",
+                "submitted_answer": None,
+                "screenshot_path": None,
+                "website_correct_answer": None
+            }
             continue
             
         input_success = False
@@ -467,7 +501,6 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
             
         log.info("Question %d result: %s", q_no, correctness.upper())
         print(f"-> Question {q_no} is: {correctness.upper()}")
-        results[q_no] = correctness
         
         # Save screenshot
         screenshot_dir = os.path.join("screenshots", worksheet_id)
@@ -479,6 +512,21 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
         except Exception as e:
             log.error("Failed to save graded screenshot: %s", e)
             
+        # Try to extract the website's correct answer if it's not correct
+        website_correct_answer = None
+        if correctness != "correct":
+            website_correct_answer = extract_website_correct_answer(driver)
+            if website_correct_answer:
+                log.info("Extracted correct answer from website: %s", website_correct_answer)
+                print(f"-> Website expects: {website_correct_answer}")
+                
+        results[q_no] = {
+            "status": correctness,
+            "submitted_answer": q_answer,
+            "screenshot_path": screenshot_path,
+            "website_correct_answer": website_correct_answer
+        }
+            
         # Manually transition if it didn't do so automatically
         if q_no < num_questions and get_current_question_number(driver) == q_no:
             log.info("Question %d did not transition automatically. Navigating manually to next question...", q_no)
@@ -487,8 +535,14 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
             time.sleep(1.5)
             
     print(f"\n--- Answering Summary for {worksheet_id} ---")
-    for q, result in results.items():
-        print(f"Question {q}: {result.upper()}")
+    for q, res_detail in results.items():
+        status = res_detail["status"].upper()
+        sub_ans = res_detail["submitted_answer"]
+        web_ans = res_detail["website_correct_answer"]
+        if web_ans:
+            print(f"Question {q}: {status} (Submitted: {sub_ans} | Website Expected: {web_ans})")
+        else:
+            print(f"Question {q}: {status} (Submitted: {sub_ans})")
     print()
     
     return results

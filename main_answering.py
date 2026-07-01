@@ -181,6 +181,7 @@ def run_automation() -> None:
         print()
 
         # Sequentially process worksheets
+        worksheet_results = {}
         for idx, ws_id in enumerate(matching_ws_ids):
             ws_title = ws_titles[ws_id]
             print(f"\n--- [{idx + 1}/{len(matching_ws_ids)}] Answering Worksheet: {ws_title} ({ws_id}) ---")
@@ -190,6 +191,7 @@ def run_automation() -> None:
                 topic_el = finder._find_topic_element(topic_name)
                 if not topic_el:
                     print(f"[ERROR] Could not re-locate topic '{topic_name}' during iteration.")
+                    worksheet_results[ws_id] = { "title": ws_title, "error": "Could not re-locate topic" }
                     return
                 finder._expand_topic(topic_el)
                 time.sleep(1.0)
@@ -214,6 +216,7 @@ def run_automation() -> None:
                     
             if not matching_card:
                 print(f"[ERROR] Could not find card for Worksheet ID: {ws_id}. Skipping.")
+                worksheet_results[ws_id] = { "title": ws_title, "error": "Could not find worksheet card" }
                 continue
                 
             # Scroll card into view
@@ -224,11 +227,13 @@ def run_automation() -> None:
             success = finder._click_start(matching_card, topic_name, ws_title)
             if not success:
                 print(f"[ERROR] Failed to open worksheet: {ws_title} ({ws_id})")
+                worksheet_results[ws_id] = { "title": ws_title, "error": "Failed to open worksheet" }
                 continue
                 
             # Answer questions
             print(f"Opened worksheet {ws_id} successfully. Answering questions...")
-            answer_worksheet_questions(driver, ws_id, answers_dict[ws_id])
+            ws_results = answer_worksheet_questions(driver, ws_id, answers_dict[ws_id])
+            worksheet_results[ws_id] = { "title": ws_title, "questions": ws_results }
             
             # Exit worksheet and return to worksheet list
             exit_success = exit_worksheet(driver)
@@ -245,6 +250,125 @@ def run_automation() -> None:
             time.sleep(2.0)
 
         print("\nAll worksheets in the topic processed.")
+        
+        # Generate and save report if we have processed worksheets
+        if worksheet_results:
+            os.makedirs("reports", exist_ok=True)
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            report_filename = f"answering_report_{timestamp}.md"
+            report_path = os.path.join("reports", report_filename)
+            
+            total_worksheets = len(worksheet_results)
+            total_questions = 0
+            correct_questions = 0
+            incorrect_questions = 0
+            partially_correct_questions = 0
+            skipped_questions = 0
+            discrepancy_count = 0
+            
+            for ws_id, data in worksheet_results.items():
+                if "questions" in data:
+                    for q_no, q_data in data["questions"].items():
+                        total_questions += 1
+                        status = q_data.get("status", "unknown")
+                        if status == "correct":
+                            correct_questions += 1
+                        elif status == "incorrect":
+                            incorrect_questions += 1
+                            discrepancy_count += 1
+                        elif status == "partially_correct":
+                            partially_correct_questions += 1
+                            discrepancy_count += 1
+                        elif status == "skipped":
+                            skipped_questions += 1
+            
+            lines = []
+            lines.append(f"# Thinkster Elevate - Worksheet Answering & Grading Report")
+            lines.append("")
+            lines.append(f"- **Generated At:** {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            lines.append(f"- **Topic:** {topic_name}")
+            lines.append(f"- **Student:** {config.TARGET_STUDENT}")
+            lines.append("")
+            lines.append("## Summary Statistics")
+            lines.append(f"- **Total Worksheets Processed:** {total_worksheets}")
+            lines.append(f"- **Total Questions Answered:** {total_questions}")
+            lines.append(f"  - ✅ **Correct:** {correct_questions}")
+            lines.append(f"  - ❌ **Incorrect (Discrepancies):** {incorrect_questions}")
+            lines.append(f"  - ⚠️ **Partially Correct:** {partially_correct_questions}")
+            lines.append(f"  - ⏭️ **Skipped:** {skipped_questions}")
+            lines.append("")
+            
+            if discrepancy_count > 0:
+                lines.append(f"> [!WARNING]")
+                lines.append(f"> Found **{discrepancy_count}** question(s) with discrepancy (graded incorrect/partially correct by website). Please review the answer key in `worksheet_answers.json`.")
+                lines.append("")
+            else:
+                lines.append(f"> [!NOTE]")
+                lines.append(f"> All submitted answers were graded correct. No discrepancies found!")
+                lines.append("")
+                
+            lines.append("## Detailed Worksheet Breakdown")
+            lines.append("")
+            
+            for ws_id, data in worksheet_results.items():
+                lines.append(f"### Worksheet: {data['title']} ({ws_id})")
+                if "error" in data:
+                    lines.append(f"- **Status:** ❌ {data['error']}")
+                    lines.append("")
+                    continue
+                    
+                lines.append("| Question | Submitted Answer | Website Expected | Status | Graded Screenshot |")
+                lines.append("| :--- | :--- | :--- | :--- | :--- |")
+                
+                for q_no, q_data in data["questions"].items():
+                    status = q_data.get("status", "unknown").upper()
+                    sub_ans = q_data.get("submitted_answer")
+                    if isinstance(sub_ans, list):
+                        sub_ans_str = ", ".join(map(str, sub_ans))
+                    else:
+                        sub_ans_str = str(sub_ans) if sub_ans is not None else "N/A"
+                        
+                    web_ans = q_data.get("website_correct_answer")
+                    web_ans_str = str(web_ans) if web_ans else "-"
+                    
+                    status_display = status
+                    if status == "CORRECT":
+                        status_display = "✅ CORRECT"
+                    elif status == "INCORRECT":
+                        status_display = "❌ INCORRECT"
+                    elif status == "PARTIALLY_CORRECT":
+                        status_display = "⚠️ PARTIALLY CORRECT"
+                    elif status == "SKIPPED":
+                        status_display = "⏭️ SKIPPED"
+                        
+                    screenshot = q_data.get("screenshot_path", "")
+                    if screenshot and os.path.exists(screenshot):
+                        abs_screenshot_path = os.path.abspath(screenshot)
+                        screenshot_link = f"[View Screenshot](file:///{abs_screenshot_path.replace(os.sep, '/')})"
+                    else:
+                        screenshot_link = "-"
+                        
+                    lines.append(f"| {q_no} | `{sub_ans_str}` | `{web_ans_str}` | {status_display} | {screenshot_link} |")
+                lines.append("")
+                
+            with open(report_path, "w", encoding="utf-8") as rf:
+                rf.write("\n".join(lines))
+            
+            print(f"\n==================================================================")
+            print(f"                       GRADING REPORT SUMMARY                     ")
+            print(f"==================================================================")
+            print(f"Topic: {topic_name}")
+            print(f"Total Worksheets: {total_worksheets}")
+            print(f"Total Questions : {total_questions}")
+            print(f"  - Correct     : {correct_questions}")
+            print(f"  - Incorrect   : {incorrect_questions} (DISCREPANCY!)")
+            print(f"  - Partial     : {partially_correct_questions}")
+            print(f"  - Skipped     : {skipped_questions}")
+            print(f"------------------------------------------------------------------")
+            print(f"Detailed Markdown report saved to:")
+            print(f"  {os.path.abspath(report_path)}")
+            print(f"==================================================================\n")
+
         hold_browser(driver)
 
     except InvalidSessionIdException:
