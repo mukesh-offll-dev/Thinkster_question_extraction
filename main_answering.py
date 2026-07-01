@@ -22,10 +22,16 @@ from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.common.by import By
 
 import config
-from dashboard import click_start_learning, select_student
-from utils import scroll_into_view, safe_click
 from logger import get_logger
-from login import launch_browser, login
+from utils import (
+    setup_driver_and_navigate,
+    prompt_topic_name,
+    prompt_worksheet_id,
+    exit_worksheet,
+    hold_browser,
+    scroll_into_view,
+    safe_click,
+)
 from topic_worksheet_finder import TopicWorksheetFinder
 from answering import answer_worksheet_questions
 
@@ -44,181 +50,8 @@ _BANNER = """
 """
 
 # ---------------------------------------------------------------------------
-# Input helpers
+# Core pipeline
 # ---------------------------------------------------------------------------
-
-def prompt_topic_name() -> str:
-    """Ask for the Topic Name and return it (loops until non-empty)."""
-    print("\nEnter Topic Name:")
-    while True:
-        try:
-            raw = input().strip()
-        except (KeyboardInterrupt, EOFError):
-            print("\nAborted.")
-            sys.exit(0)
-        if raw:
-            return raw
-
-def prompt_worksheet_id() -> str:
-    """Ask for the Worksheet ID and return it (loops until non-empty)."""
-    print("\nEnter Worksheet ID (e.g. AQCMXAL214):")
-    while True:
-        try:
-            raw = input().strip()
-        except (KeyboardInterrupt, EOFError):
-            print("\nAborted.")
-            sys.exit(0)
-        if raw:
-            return raw
-        print("[WARN] Topic Name cannot be empty. Please try again.\n")
-
-
-def exit_worksheet(driver: WebDriver) -> bool:
-    """
-    Finds and clicks the exit button in the top left corner of the worksheet screen.
-    Also handles any confirmation dialog that might appear.
-    """
-    log.info("Attempting to exit the worksheet...")
-    print("\nExiting current worksheet...")
-    
-    js_code = """
-    function clickExit() {
-        // 1. Find the exit button in the top-left area
-        let candidates = Array.from(document.querySelectorAll('button, a, [role="button"], .lrn-btn, [class*="exit" i], [class*="back" i], [class*="close" i], [class*="home" i]'));
-        
-        let bestEl = null;
-        let maxScore = -1;
-        
-        for (let el of candidates) {
-            let rect = el.getBoundingClientRect();
-            if (rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.top <= 120 && rect.left >= 0 && rect.left <= 150) {
-                let text = (el.innerText || el.textContent || "").trim().toLowerCase();
-                let className = (el.className || "").toString().toLowerCase();
-                let id = (el.id || "").toLowerCase();
-                let aria = (el.getAttribute("aria-label") || "").toLowerCase();
-                let title = (el.getAttribute("title") || "").toLowerCase();
-                
-                let score = 0;
-                
-                if (/exit|back|close|quit|leave|dashboard|home|x/i.test(text)) score += 20;
-                if (/exit|back|close|quit|leave|dashboard|home|x/i.test(className)) score += 20;
-                if (/exit|back|close|quit|leave|dashboard|home|x/i.test(id)) score += 20;
-                if (/exit|back|close|quit|leave|dashboard|home|x/i.test(aria)) score += 20;
-                if (/exit|back|close|quit|leave|dashboard|home|x/i.test(title)) score += 20;
-                
-                let isClickable = el.tagName === 'BUTTON' || el.tagName === 'A' || el.getAttribute('role') === 'button' || window.getComputedStyle(el).cursor === 'pointer';
-                if (isClickable) score += 10;
-                
-                if (text === '←' || text === 'x' || text === 'X' || text === '<' || className.includes('arrow') || className.includes('icon')) {
-                    score += 15;
-                }
-                
-                if (score > maxScore) {
-                    maxScore = score;
-                    bestEl = el;
-                }
-            }
-        }
-        
-        if (bestEl) {
-            bestEl.click();
-            return true;
-        }
-        
-        // Fallback: search for elements with specific selectors in top-left
-        let fallbacks = [
-            'button.exit', 'a.exit', 'button.back', 'a.back',
-            '[class*="exit" i]', '[class*="back" i]', '[class*="close" i]', '[class*="home" i]'
-        ];
-        for (let sel of fallbacks) {
-            let els = document.querySelectorAll(sel);
-            for (let el of els) {
-                let rect = el.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.top <= 120 && rect.left >= 0 && rect.left <= 150) {
-                    el.click();
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-    return clickExit();
-    """
-    try:
-        success = driver.execute_script(js_code)
-        if success:
-            log.info("Exit button clicked.")
-            print("Exit button clicked.")
-            
-            # Wait a moment to see if a confirmation dialog appears
-            time.sleep(2.0)
-            
-            # Check for confirmation modals/dialogs
-            js_confirm_code = """
-            function handleConfirmation() {
-                let modals = Array.from(document.querySelectorAll('.modal, [class*="modal" i], [class*="dialog" i], [class*="overlay" i], [class*="popup" i]'));
-                if (modals.length === 0) return false;
-                
-                // Look for confirmation buttons inside visible modals
-                for (let modal of modals) {
-                    let rect = modal.getBoundingClientRect();
-                    if (rect.width > 0 && rect.height > 0) {
-                        let buttons = Array.from(modal.querySelectorAll('button, a, [role="button"]'));
-                        for (let btn of buttons) {
-                            let text = (btn.innerText || btn.textContent || "").trim().toLowerCase();
-                            if (/yes|confirm|exit|quit|leave|ok|sure|agree/i.test(text)) {
-                                btn.click();
-                                return true;
-                            }
-                        }
-                    }
-                }
-                return false;
-            }
-            return handleConfirmation();
-            """
-            confirmed = driver.execute_script(js_confirm_code)
-            if confirmed:
-                log.info("Confirmation dialog handled.")
-                print("Exit confirmation confirmed.")
-            
-            time.sleep(3.0)
-            return True
-        else:
-            log.warning("Exit button not found via top-left area. Trying wider scan...")
-            js_code_wider = """
-            let els = document.querySelectorAll('button, a, [class*="exit" i], [class*="back" i], [class*="close" i]');
-            for (let el of els) {
-                let rect = el.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0 && rect.top <= 150 && rect.left <= 250) {
-                    let text = (el.innerText || el.textContent || "").trim().toLowerCase();
-                    if (/exit|back|close|quit|leave/i.test(text) || /exit|back|close/i.test(el.className)) {
-                        el.click();
-                        return true;
-                    }
-                }
-            }
-            return false;
-            """
-            success_wider = driver.execute_script(js_code_wider)
-            if success_wider:
-                log.info("Exit button clicked via wider scan.")
-                print("Exit button clicked (wider search).")
-                
-                # Check for confirmation modals
-                time.sleep(2.0)
-                driver.execute_script(js_confirm_code)
-                
-                time.sleep(3.0)
-                return True
-            else:
-                log.error("Could not find exit button.")
-                print("[WARN] Could not find or click the exit button.")
-                return False
-    except Exception as e:
-        log.error("Exception during exit button click: %s", e)
-        return False
-
 
 def run_automation() -> None:
     # Load answers dictionary
@@ -256,12 +89,8 @@ def run_automation() -> None:
     driver: WebDriver | None = None
 
     try:
-        # Browser + Login + Student + Dashboard
-        driver = launch_browser()
-        login(driver)
-        select_student(driver)
-        click_start_learning(driver)
-        time.sleep(4.0)
+        # Browser setup and dashboard navigation
+        driver = setup_driver_and_navigate()
 
         # Initialize finder and find topic
         finder = TopicWorksheetFinder(driver)
@@ -407,6 +236,7 @@ def run_automation() -> None:
                 print(f"[WARN] Exit button not clicked successfully. Attempting fallback URL navigation...")
                 driver.get(config.BASE_URL)
                 time.sleep(5.0)
+                from dashboard import select_student, click_start_learning
                 select_student(driver)
                 click_start_learning(driver)
                 time.sleep(3.0)
@@ -415,7 +245,7 @@ def run_automation() -> None:
             time.sleep(2.0)
 
         print("\nAll worksheets in the topic processed.")
-        _hold_browser(driver)
+        hold_browser(driver)
 
     except InvalidSessionIdException:
         log.error("Browser closed unexpectedly.")
@@ -437,14 +267,6 @@ def run_automation() -> None:
             except Exception:
                 pass
 
-
-def _hold_browser(driver: WebDriver) -> None:
-    log.info("Browser remains open. Press Ctrl+C to quit.")
-    try:
-        while True:
-            time.sleep(5)
-    except KeyboardInterrupt:
-        log.info("User quit.")
 
 
 def main() -> None:

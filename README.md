@@ -33,45 +33,17 @@ PASSWORD = "your_password"
 
 ### 3. Run the automation
 
+To extract worksheet question screenshots sequentially under a topic, run:
 ```bash
 python main.py
 ```
+When prompted, enter the target Topic Name (e.g. `Complex Numbers`).
 
-When prompted, enter the Worksheet ID:
-
+To automatically fill in answers and check correctness for a specific worksheet, first make sure the answers are defined in `worksheet_answers.json` under the Worksheet ID key (e.g. `AQCMXAL214`), then run:
+```bash
+python main_answering.py
 ```
-Enter Worksheet ID: 123456
-```
-
-The script handles everything else automatically.
-
----
-
-## How It Works
-
-```
-Launch Chrome
-    ↓
-Open https://elevate.hellothinkster.com/
-    ↓
-Login with credentials from config.py
-    ↓
-Select student: Thomas D
-    ↓
-Click Start Learning
-    ↓
-┌─────────────────────────────────────────┐
-│   worksheet_index.json exists?          │
-│   YES → Fast path (direct navigation)  │
-│   NO  → Full scan → Build index → Open │
-└─────────────────────────────────────────┘
-    ↓
-Click Start on matched worksheet
-    ↓
-Verify worksheet page loaded
-    ↓
-Done ✅
-```
+When prompted, enter the Topic Name and the target Worksheet ID.
 
 ---
 
@@ -79,17 +51,18 @@ Done ✅
 
 ```
 project/
-├── main.py               # Entry point – run this
+├── main.py               # Question Screenshots Extraction Tool – gets question screens
+├── main_answering.py     # Worksheet Answering Tool – inputs answers and checks correctness
+├── answering.py          # Form filler and submit logic for math worksheets
+├── topic_worksheet_finder.py # Topic navigation, expansion, and card search
 ├── config.py             # Credentials and settings
 ├── login.py              # Browser launch + login logic
 ├── dashboard.py          # Student selection + Start Learning
-├── index_builder.py      # Topic/worksheet scanning + JSON index
-├── worksheet_search.py   # Lookup, navigate, open, verify
-├── utils.py              # Shared Selenium helpers
+├── utils.py              # Shared Selenium helpers and automation orchestrators
 ├── logger.py             # Console + rotating file logger
 ├── requirements.txt
 ├── README.md
-├── worksheet_index.json  # Auto-generated cache (first run)
+├── worksheet_answers.json # Pre-defined answers for target worksheets
 └── logs/
     └── thinkster_automation.log
 ```
