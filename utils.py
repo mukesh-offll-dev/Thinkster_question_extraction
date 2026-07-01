@@ -295,18 +295,64 @@ def setup_driver_and_navigate() -> WebDriver:
 
 
 def prompt_topic_name() -> str:
-    """Ask for the Topic Name and return it (loops until non-empty)."""
+    """Ask for the Topic Name and return it (loops until non-empty).
+    Offers a numbered menu for known topics, or manual entry (0).
+    """
     import sys
-    print("\nEnter Topic Name:")
+    topics = [
+        "Number Representation",
+        "Algebra 2 Foundations",
+        "Number Relation",
+        "Algebra",
+        "Functions & Function Notation",
+        "Multiplication",
+        "Division",
+        "Geometry",
+        "Complex Numbers"
+    ]
+    
+    print("\nSelect Topic:")
+    for i, topic in enumerate(topics, start=1):
+        print(f"  {i}. {topic}")
+    print("  0. Manual entering")
+    
     while True:
         try:
-            raw = input().strip()
+            print("\nEnter selection (0-9 or manual name): ", end="", flush=True)
+            choice = input().strip()
         except (KeyboardInterrupt, EOFError):
             print("\nAborted.")
             sys.exit(0)
-        if raw:
-            return raw
-        print("[WARN] Topic Name cannot be empty. Please try again.\n")
+            
+        if not choice:
+            print("[WARN] Input cannot be empty. Please try again.")
+            continue
+            
+        if choice == "0":
+            try:
+                print("Enter Topic Name (Manual): ", end="", flush=True)
+                manual_name = input().strip()
+            except (KeyboardInterrupt, EOFError):
+                print("\nAborted.")
+                sys.exit(0)
+            if manual_name:
+                return manual_name
+            print("[WARN] Topic Name cannot be empty. Please try again.")
+            continue
+            
+        if choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(topics):
+                selected_topic = topics[idx]
+                print(f"Selected: {selected_topic}")
+                return selected_topic
+            else:
+                print(f"[WARN] Invalid option. Please enter a number between 0 and {len(topics)}.")
+                continue
+                
+        # If it's a non-digit string, treat it as manual entering directly
+        print(f"Selected: {choice}")
+        return choice
 
 
 def prompt_worksheet_id() -> str:
