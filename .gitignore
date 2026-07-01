@@ -2,3 +2,4 @@ __pycache__/
 .venv/
 screenshots/
 logs/
+chrome_profile/

@@ -39,11 +39,22 @@ TARGET_STUDENT = "Thomas D"
 # Index File
 # ---------------------------------------------------------------------------
 INDEX_FILE = "worksheet_index.json"
+ANSWERS_FILE = "worksheet_answers.json"
+
 
 # ---------------------------------------------------------------------------
 # Screenshots / Artifact Directory
 # ---------------------------------------------------------------------------
 SCREENSHOTS_DIR = "C:/Users/ELCOT/.gemini/antigravity-ide/brain/a1009690-e737-4b28-826b-cdfcee5e8dbc"
+
+
+# ---------------------------------------------------------------------------
+# Session Cache Settings
+# ---------------------------------------------------------------------------
+# If True, Chrome will use a persistent profile in the workspace directory.
+# This avoids logging in and selecting the student profile on every run.
+PERSIST_SESSION = True
+CHROME_PROFILE_DIR = "chrome_profile"
 
 
 # ---------------------------------------------------------------------------

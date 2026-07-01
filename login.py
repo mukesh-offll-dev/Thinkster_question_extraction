@@ -8,6 +8,7 @@
 #   4. Waiting for successful authentication.
 # =============================================================================
 
+import os
 import time
 
 from selenium import webdriver
@@ -62,6 +63,13 @@ def launch_browser() -> WebDriver:
         options.add_argument("--window-size=1920,1080")
     if config.WINDOW_MAXIMIZE:
         options.add_argument("--start-maximized")
+
+    # ---- Session Cache ------------------------------------------------
+    if getattr(config, "PERSIST_SESSION", False):
+        profile_dir = getattr(config, "CHROME_PROFILE_DIR", "chrome_profile")
+        profile_path = os.path.abspath(profile_dir)
+        log.info("Using persistent Chrome profile directory: %s", profile_path)
+        options.add_argument(f"--user-data-dir={profile_path}")
 
     # ---- Anti-detection -----------------------------------------------
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -150,6 +158,48 @@ class LoginHandler:
         wait_for_page_load(self.driver)
         log.info("Website loaded.")
 
+    def is_logged_in(self) -> bool:
+        """
+        Check if we are already logged in by checking the URL and/or looking for dashboard elements.
+        """
+        log.debug("Checking if session is already logged in...")
+        time.sleep(2.0)  # Wait for potential redirects/page loads
+        url = self.driver.current_url.lower()
+
+        # If we are on the login page or URL has /login, we are definitely not logged in.
+        if "login" in url:
+            log.debug("Not logged in (URL contains 'login').")
+            return False
+
+        # Check if any post-login indicators are present
+        post_login_selectors = [
+            "[class*='student']",
+            "[class*='profile']",
+            "[class*='dashboard']",
+            "[class*='home']",
+            "[class*='child']",
+            "img[alt*='student' i]",
+            "[data-testid*='student']",
+            "main",
+        ]
+        for sel in post_login_selectors:
+            if len(self.driver.find_elements(By.CSS_SELECTOR, sel)) > 0:
+                log.info("Already logged in (detected post-login elements: %s).", sel)
+                return True
+
+        # Check if login fields are present. If we can't find #email, we might already be logged in
+        try:
+            email_field = self.driver.find_element(By.CSS_SELECTOR, self._SEL_EMAIL_INPUT)
+            if not email_field.is_displayed():
+                log.info("Already logged in (email input is not visible).")
+                return True
+        except NoSuchElementException:
+            log.info("Already logged in (email input element not found).")
+            return True
+
+        log.debug("Not logged in (login fields are visible and no post-login elements detected).")
+        return False
+
     def login(self) -> None:
         """
         Fill in email and password and submit the login form.
@@ -159,6 +209,11 @@ class LoginHandler:
         ------
         RuntimeError if login fails or times out.
         """
+        if self.is_logged_in():
+            log.info("Already logged in. Skipping credentials form submission.")
+            print("Session cache found: already logged in.")
+            return
+
         log.info("Logging in as %s ...", config.EMAIL)
 
         # Wait for the email field to be present and visible before interacting

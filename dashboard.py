@@ -51,6 +51,11 @@ class DashboardHandler:
     # Public interface
     # ------------------------------------------------------------------
 
+    def is_student_selected(self) -> bool:
+        """Check if the student is already selected or we are past this screen."""
+        url = self.driver.current_url.lower()
+        return any(term in url for term in ("dashboard", "journey", "topic", "worksheet", "learning"))
+
     def select_student(self) -> None:
         """
         Locate the student card for config.TARGET_STUDENT and click its
@@ -64,6 +69,11 @@ class DashboardHandler:
         ------
         RuntimeError if the target student cannot be found.
         """
+        if self.is_student_selected():
+            log.info("Student selection already completed. Skipping.")
+            print("Session cache found: student already selected.")
+            return
+
         log.info("Selecting student: %s ...", config.TARGET_STUDENT)
 
         # Wait for the student list to render after login redirect
@@ -106,6 +116,11 @@ class DashboardHandler:
             "Verify the student name in config.TARGET_STUDENT."
         )
 
+    def is_already_in_learning_mode(self) -> bool:
+        """Check if we are already past the main dashboard and on the learning topics page."""
+        url = self.driver.current_url.lower()
+        return "dashboard" not in url and any(term in url for term in ("journey", "topic", "worksheet", "learning"))
+
     def click_start_learning(self) -> None:
         """
         Click the 'Start Learning' button on /dashboard.
@@ -117,6 +132,11 @@ class DashboardHandler:
         ------
         RuntimeError if the button cannot be located.
         """
+        if self.is_already_in_learning_mode():
+            log.info("Already in learning dashboard/topics view. Skipping 'Start Learning' click.")
+            print("Session cache found: already on learning dashboard.")
+            return
+
         log.info("Opening Learning Dashboard...")
 
         # Wait for the page to navigate to /dashboard after student selection
