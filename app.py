@@ -287,20 +287,18 @@ def run_pipeline_in_background(topic_name, worksheet_id, skip_extraction):
     with state_lock:
         analysis_state["report"][worksheet_id] = {}
 
-    for filename in files:
+    def _analyze_single_image(filename):
+        """Analyze one image and update shared state. Runs inside a thread pool."""
+        nonlocal completed_q_count
         if stop_event.is_set():
-            with state_lock:
-                analysis_state["status"] = "Stopped"
-                analysis_state["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                analysis_state["execution_time_seconds"] = (datetime.now() - start_dt).total_seconds()
             return
-            
+
         q_num = get_question_number(filename)
         with state_lock:
             analysis_state["current_question_number"] = q_num
-            
+
         img_path = os.path.join(ws_dir, filename)
-        
+
         max_retries = 3
         retry_delay = 15
         response = None
@@ -324,12 +322,12 @@ def run_pipeline_in_background(topic_name, worksheet_id, skip_extraction):
             except Exception as e:
                 err_msg = str(e)
                 is_rate_limit = "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "quota" in err_msg.lower()
-                
+
                 if is_rate_limit and attempt < max_retries - 1:
                     log_callback(f"⏳ Rate limit reached. Waiting {retry_delay}s before retry...", q_num)
                     time.sleep(retry_delay)
                     continue
-                
+
                 if is_rate_limit:
                     ai_text = f"❌ Rate limit exceeded after {max_retries} retries."
                 else:
@@ -355,18 +353,18 @@ def run_pipeline_in_background(topic_name, worksheet_id, skip_extraction):
                 collection.insert_one(doc)
             except Exception as e:
                 print(f"Failed to write to MongoDB: {e}")
-        
+
         with state_lock:
             if is_issue:
                 analysis_state["total_issues"] += 1
             else:
                 analysis_state["total_passed"] += 1
-            
+
             analysis_state["report"][worksheet_id][f"Q{q_num}"] = ai_text
             completed_q_count += 1
             analysis_state["completed_questions"] = completed_q_count
             analysis_state["percent_complete"] = (completed_q_count / total_q) * 100.0
-            
+
             analysis_state["logs"].append({
                 "worksheet_id": worksheet_id,
                 "question_number": q_num,
@@ -374,6 +372,23 @@ def run_pipeline_in_background(topic_name, worksheet_id, skip_extraction):
                 "timestamp": analysis_time_str,
                 "ai_response": ai_text
             })
+
+    # Process up to 3 images concurrently
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {executor.submit(_analyze_single_image, fn): fn for fn in files}
+        for future in as_completed(futures):
+            if stop_event.is_set():
+                with state_lock:
+                    analysis_state["status"] = "Stopped"
+                    analysis_state["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    analysis_state["execution_time_seconds"] = (datetime.now() - start_dt).total_seconds()
+                executor.shutdown(wait=False, cancel_futures=True)
+                return
+            try:
+                future.result()  # surface any unexpected exception
+            except Exception as exc:
+                log_callback(f"❌ Unexpected error processing image: {exc}")
 
     with state_lock:
         analysis_state["completed_worksheets"] = 1
@@ -555,22 +570,19 @@ def run_analysis_in_background():
             analysis_state["report"][ws_id] = {}
 
         files = all_worksheet_files[ws_id]
-        
-        for filename in files:
-            # Check stop signal before each question
+
+        def _analyze_ws_image(filename, _ws_id=ws_id):
+            """Analyze one image for multi-worksheet mode. Runs inside a thread pool."""
+            nonlocal completed_q_count
             if stop_event.is_set():
-                with state_lock:
-                    analysis_state["status"] = "Stopped"
-                    analysis_state["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    analysis_state["execution_time_seconds"] = (datetime.now() - start_dt).total_seconds()
                 return
+
             q_num = get_question_number(filename)
             with state_lock:
                 analysis_state["current_question_number"] = q_num
 
-            img_path = os.path.join(screenshots_dir, ws_id, filename)
-            
-            import time
+            img_path = os.path.join(screenshots_dir, _ws_id, filename)
+
             max_retries = 3
             retry_delay = 15
             response = None
@@ -594,12 +606,11 @@ def run_analysis_in_background():
                 except Exception as e:
                     err_msg = str(e)
                     is_rate_limit = "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "quota" in err_msg.lower()
-                    
+
                     if is_rate_limit and attempt < max_retries - 1:
-                        # Log a short rate-limit warning, then wait and retry
                         with state_lock:
                             analysis_state["logs"].append({
-                                "worksheet_id": ws_id,
+                                "worksheet_id": _ws_id,
                                 "question_number": q_num,
                                 "screenshot_name": filename,
                                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -607,8 +618,7 @@ def run_analysis_in_background():
                             })
                         time.sleep(retry_delay)
                         continue
-                    
-                    # Extract a clean, readable error message
+
                     if is_rate_limit:
                         ai_text = f"❌ Rate limit exceeded after {max_retries} retries. Please wait and try again."
                     elif "SAFETY" in err_msg or "safety" in err_msg.lower():
@@ -618,7 +628,6 @@ def run_analysis_in_background():
                     elif "UNAVAILABLE" in err_msg or "ServiceUnavailable" in err_msg:
                         ai_text = "❌ Gemini service temporarily unavailable. Try again later."
                     else:
-                        # Strip verbose stack info, keep just the core message
                         clean = err_msg.split("\n")[0][:180]
                         ai_text = f"❌ Model error: {clean}"
                     break
@@ -626,10 +635,10 @@ def run_analysis_in_background():
             is_issue = "Issue:" in ai_text or ai_text.startswith("❌")
             analysis_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # Save results to MongoDB (skip saving error entries)
+            # Save results to MongoDB (skip error entries)
             if not ai_text.startswith("❌") and not ai_text.startswith("⏳"):
                 doc = {
-                    "worksheet_id": ws_id,
+                    "worksheet_id": _ws_id,
                     "question_number": q_num,
                     "image_name": filename,
                     "ai_response": ai_text,
@@ -641,26 +650,50 @@ def run_analysis_in_background():
                     collection.insert_one(doc)
                 except Exception as e:
                     print(f"Failed to write to MongoDB: {e}")
-            
+
             with state_lock:
                 if is_issue:
                     analysis_state["total_issues"] += 1
                 else:
                     analysis_state["total_passed"] += 1
-                
-                analysis_state["report"][ws_id][f"Q{q_num}"] = ai_text
-                
+
+                analysis_state["report"][_ws_id][f"Q{q_num}"] = ai_text
+
                 completed_q_count += 1
                 analysis_state["completed_questions"] = completed_q_count
                 analysis_state["percent_complete"] = (completed_q_count / total_q) * 100.0
-                
+
                 analysis_state["logs"].append({
-                    "worksheet_id": ws_id,
+                    "worksheet_id": _ws_id,
                     "question_number": q_num,
                     "screenshot_name": filename,
                     "timestamp": analysis_time_str,
                     "ai_response": ai_text
                 })
+
+        # Process up to 3 images concurrently for this worksheet
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            ws_futures = {executor.submit(_analyze_ws_image, fn): fn for fn in files}
+            for future in as_completed(ws_futures):
+                if stop_event.is_set():
+                    with state_lock:
+                        analysis_state["status"] = "Stopped"
+                        analysis_state["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        analysis_state["execution_time_seconds"] = (datetime.now() - start_dt).total_seconds()
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    return
+                try:
+                    future.result()
+                except Exception as exc:
+                    with state_lock:
+                        analysis_state["logs"].append({
+                            "worksheet_id": ws_id,
+                            "question_number": 0,
+                            "screenshot_name": ws_futures[future],
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "ai_response": f"❌ Unexpected error: {exc}"
+                        })
 
         completed_ws_count += 1
         with state_lock:
