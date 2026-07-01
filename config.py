@@ -26,6 +26,10 @@ SHORT_WAIT   = 5
 DEFAULT_WAIT = 15
 LONG_WAIT    = 30
 
+# Delays for question changing and rendering (seconds)
+QUESTION_TRANSITION_DELAY = 1.5
+QUESTION_SETTLE_DELAY     = 0.5
+
 # ---------------------------------------------------------------------------
 # Student to Select
 # ---------------------------------------------------------------------------

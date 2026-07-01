@@ -541,13 +541,13 @@ def capture_question_screenshots(driver: WebDriver, worksheet_id: str) -> None:
         # Navigate to the question (always click the dot, starting with 1)
         clicked = click_question_dot(q_no)
         if clicked:
-            time.sleep(3.0)  # Wait for transition/render
+            time.sleep(config.QUESTION_TRANSITION_DELAY)  # Wait for transition/render
         else:
             log.warning("Could not click navigation dot for Question %d", q_no)
         
         # Scroll to top/center to ensure visibility
         driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(1.0)  # Allow rendering to settle
+        time.sleep(config.QUESTION_SETTLE_DELAY)  # Allow rendering to settle
         
         # Save screenshot
         filename = f"Question_{q_no}.png"
