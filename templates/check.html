@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Answers - Thinkster Math Automation Testing</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary:        #1F2937;
+            --primary-light:  #4B5563;
+            --primary-dark:   #111827;
+            --primary-soft:   #F3F4F6;
+            --accent:         #374151;
+            --success:        #10B981;
+            --success-light:  #D1FAE5;
+            --danger:         #EF4444;
+            --danger-light:   #FEE2E2;
+            --warning:        #F59E0B;
+            --warning-light:  #FEF3C7;
+            --text-dark:      #111827;
+            --text-mid:       #374151;
+            --text-muted:     #6B7280;
+            --bg:             #F9FAFB;
+            --surface:        #FFFFFF;
+            --surface-2:      #F9FAFB;
+            --border:         #E5E7EB;
+            --border-light:   #F3F4F6;
+            --shadow-sm:      0 1px 3px rgba(0,0,0,0.05);
+            --shadow-md:      0 4px 6px rgba(0,0,0,0.05);
+            --shadow-lg:      0 10px 15px rgba(0,0,0,0.05);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text-dark);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        .glass-card, .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: var(--shadow-sm);
+            transition: box-shadow 0.2s, border-color 0.2s;
+        }
+
+        .glass-card:hover, .card:hover {
+            box-shadow: var(--shadow-md);
+            border-color: var(--border);
+        }
+
+        header {
+            background: #FFFFFF;
+            border-bottom: 2px solid #E5E7EB;
+            padding: 0 40px;
+            height: 72px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo-section { display: flex; align-items: center; gap: 14px; }
+        .logo-img { height: 44px; width: auto; object-fit: contain; border-radius: 6px; }
+        .divider-v { width: 1px; height: 36px; background: #E5E7EB; }
+
+        .logo-section h1 {
+            font-size: 19px; font-weight: 800; color: #111827;
+            letter-spacing: -0.3px; line-height: 1.2;
+        }
+
+        .logo-section h1 span {
+            display: block; font-size: 10px; font-weight: 500; color: #6B7280;
+            letter-spacing: 1.5px; text-transform: uppercase; margin-top: 1px;
+        }
+
+        .control-panel { display: flex; gap: 10px; align-items: center; }
+
+        .btn {
+            font-family: inherit; font-weight: 600; font-size: 13px;
+            padding: 9px 18px; border-radius: 8px; border: 1.5px solid transparent;
+            cursor: pointer; transition: all 0.18s ease;
+            display: inline-flex; align-items: center; gap: 7px;
+            white-space: nowrap; text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--primary); color: #fff; border-color: var(--primary);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--primary-dark); border-color: var(--primary-dark);
+            transform: translateY(-1px); box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+        }
+
+        .btn-success {
+            background: var(--success); color: #fff; border-color: var(--success);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background: #059669; border-color: #059669;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: var(--surface); border-color: var(--border); color: var(--text-dark);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--primary-soft); border-color: var(--border);
+            color: var(--text-dark); transform: translateY(-1px);
+        }
+
+        .btn:disabled {
+            opacity: 0.45; cursor: not-allowed; transform: none !important; box-shadow: none !important;
+        }
+
+        .main-container {
+            max-width: 1400px; width: 100%; margin: 0 auto;
+            padding: 30px 40px; display: grid; grid-template-columns: 1fr 400px; gap: 30px; flex-grow: 1;
+        }
+
+        .left-content { display: flex; flex-direction: column; gap: 24px; }
+        
+        .detail-header {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            border-bottom: 1px solid var(--border); padding-bottom: 18px;
+        }
+
+        .detail-title-block h2 {
+            font-size: 24px; font-weight: 800; color: var(--text-dark);
+            margin-bottom: 4px; letter-spacing: -0.3px;
+        }
+
+        .detail-meta-text {
+            font-size: 13px; color: var(--text-muted);
+            display: flex; flex-wrap: wrap; gap: 18px;
+        }
+
+        .detail-meta-text span strong { color: var(--text-dark); font-weight: 600; }
+
+        .question-item {
+            padding: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+        }
+
+        .question-screenshot {
+            border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+            background: #f0f0f0; display: flex; align-items: center; justify-content: center;
+            max-height: 280px;
+        }
+
+        .question-screenshot img {
+            max-width: 100%; max-height: 280px; object-fit: contain;
+        }
+
+        .question-edit-panel {
+            display: flex; flex-direction: column; gap: 14px;
+        }
+
+        .question-title {
+            font-size: 16px; font-weight: 700; color: var(--primary);
+            border-bottom: 1px solid var(--border-light); padding-bottom: 8px;
+        }
+
+        .input-group {
+            display: flex; flex-direction: column; gap: 6px;
+        }
+
+        .input-group label {
+            font-size: 11px; font-weight: 600; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+
+        .input-field {
+            font-family: inherit; font-size: 14px; padding: 10px 14px;
+            border-radius: 8px; border: 1.5px solid var(--border);
+            outline: none; transition: border-color 0.15s;
+            width: 100%; background: var(--surface); color: var(--text-dark);
+        }
+
+        .input-field:focus {
+            border-color: var(--primary-light);
+        }
+
+        .sidebar { display: flex; flex-direction: column; gap: 20px; }
+
+        .sidebar-card { padding: 20px; }
+
+        .sidebar-card h3 {
+            font-size: 11px; font-weight: 700; margin-bottom: 14px;
+            color: var(--primary); text-transform: uppercase; letter-spacing: 1px;
+            border-bottom: 2px solid var(--border); padding-bottom: 8px;
+        }
+
+        .info-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+        .info-list li { display: flex; justify-content: space-between; font-size: 13px; align-items: center; }
+        .info-list li .lbl { color: var(--text-muted); }
+        .info-list li .val { font-weight: 700; color: var(--text-dark); }
+
+        .terminal-panel {
+            padding: 0; display: flex; flex-direction: column; height: 350px;
+        }
+
+        .terminal-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 16px; border-bottom: 1px solid var(--border);
+            background: var(--surface-2); border-radius: 12px 12px 0 0;
+        }
+
+        .terminal-header h4 { font-size: 12px; font-weight: 700; color: var(--primary); }
+
+        .terminal-console {
+            flex-grow: 1; overflow-y: auto; background: #111827;
+            color: #10B981; font-family: 'Courier New', Courier, monospace;
+            font-size: 12px; padding: 14px; line-height: 1.5;
+            display: flex; flex-direction: column; gap: 6px;
+        }
+
+        .terminal-placeholder {
+            color: #6B7280; text-align: center; margin-top: 100px;
+        }
+
+        .status-badge {
+            padding: 4px 12px; border-radius: 20px; font-size: 11px;
+            font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+        }
+
+        .status-waiting { background: var(--border-light); color: var(--text-muted); border: 1px solid var(--border); }
+        .status-processing { background: var(--warning-light); color: var(--warning); border: 1px solid rgba(245,158,11,0.3); }
+        .status-completed { background: var(--success-light); color: var(--success); border: 1px solid rgba(16,185,129,0.3); }
+        .status-failed { background: var(--danger-light); color: var(--danger); border: 1px solid rgba(239,68,68,0.3); }
+
+        /* Toast Notification */
+        .toast {
+            visibility: hidden; min-width: 240px; background: var(--surface-2);
+            border: 1px solid var(--border); color: var(--text-dark);
+            text-align: center; border-radius: 8px; padding: 14px 20px;
+            position: fixed; z-index: 1001; right: 30px; bottom: 30px;
+            font-size: 14px; font-weight: 500; box-shadow: var(--shadow-lg);
+            transform: translateY(20px); opacity: 0; transition: all 0.3s ease;
+        }
+
+        .toast.show { visibility: visible; transform: translateY(0); opacity: 1; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo-section">
+            <img src="/logo" alt="Thinkster Math Logo" class="logo-img" onerror="this.style.display='none'">
+            <div class="divider-v"></div>
+            <h1>
+                Thinkster Math - Automation Testing
+                <span>Verify & Answer Worksheet</span>
+            </h1>
+        </div>
+        <div class="control-panel">
+            <a href="/" class="btn btn-secondary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+                Back to Dashboard
+            </a>
+            <button id="saveBtn" class="btn btn-success" onclick="saveAnswers()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                    <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                    <polyline points="7 3 7 8 15 8"></polyline>
+                </svg>
+                Save Answers
+            </button>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <!-- Main Verification Section -->
+        <div class="left-content">
+            <div class="detail-header">
+                <div class="detail-title-block">
+                    <h2>Review Generated Answers</h2>
+                    <div class="detail-meta-text">
+                        <span>Worksheet ID: <strong id="metaWorksheetId">-</strong></span>
+                        <span>Topic: <strong id="metaTopicName">-</strong></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- List of Questions -->
+            <div id="questionsContainer" style="display: flex; flex-direction: column; gap: 20px;">
+                <div class="glass-card" style="padding: 40px; text-align: center; color: var(--text-muted);">
+                    Loading worksheet answers...
+                </div>
+            </div>
+        </div>
+
+        <!-- Automation Controls Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-card glass-card">
+                <h3>Automation Status</h3>
+                <ul class="info-list">
+                    <li>
+                        <span class="lbl">Auto-Answering Status</span>
+                        <span id="answeringStatus" class="status-badge status-waiting">Waiting</span>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="sidebar-card glass-card" style="display: flex; flex-direction: column; gap: 14px;">
+                <h3>Answering Setup</h3>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" id="headlessAnswering" style="cursor: pointer; width: 16px; height: 16px;" />
+                    <label for="headlessAnswering" style="font-size: 13px; color: var(--text-mid); cursor: pointer; user-select: none;">Run browser in headless mode</label>
+                </div>
+                <button id="runAnsweringBtn" class="btn btn-primary" onclick="startAnswering()" style="justify-content: center; width: 100%;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                    Start Auto-Answering
+                </button>
+            </div>
+
+            <!-- Answering Logs Console -->
+            <div class="terminal-panel glass-card">
+                <div class="terminal-header">
+                    <h4>Answering Logs</h4>
+                    <div id="logsSpinner" class="status-badge" style="display: none; padding: 2px 8px; font-size: 9px; background:var(--warning-light); color:var(--warning);">Running</div>
+                </div>
+                <div id="consoleTerminal" class="terminal-console">
+                    <div class="terminal-placeholder">Console output will appear here when answering starts...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toastNotification" class="toast"></div>
+
+    <script>
+        const worksheetId = "{{ worksheet_id }}";
+        let topicName = "Unknown Topic";
+        let pollingInterval = null;
+        let answersLoaded = {};
+
+        function showToast(message, color, duration = 3500) {
+            const toast = document.getElementById("toastNotification");
+            toast.innerText = message;
+            toast.style.background = color || "var(--surface-2)";
+            toast.style.color = "#E8EEF7";
+            toast.classList.add("show");
+            setTimeout(() => { toast.classList.remove("show"); }, duration);
+        }
+
+        function loadAnswers() {
+            fetch(`/api/db/answers/${encodeURIComponent(worksheetId)}`)
+                .then(res => res.json())
+                .then(data => {
+                    topicName = data.topicName || "Unknown Topic";
+                    document.getElementById("metaWorksheetId").innerText = worksheetId;
+                    document.getElementById("metaTopicName").innerText = topicName;
+                    
+                    answersLoaded = data;
+                    renderAnswersList(data);
+                })
+                .catch(() => {
+                    document.getElementById("questionsContainer").innerHTML = `
+                        <div class="glass-card" style="padding:40px;text-align:center;color:var(--danger);">
+                            Failed to load answers from database. Check if the pipeline completed for this worksheet.
+                        </div>`;
+                });
+        }
+
+        function renderAnswersList(data) {
+            const container = document.getElementById("questionsContainer");
+            container.innerHTML = "";
+
+            // Collect questions keys (q1, q2...)
+            const qKeys = Object.keys(data).filter(k => k.startsWith("q") && /^\d+$/.test(k.substring(1))).sort((a,b) => {
+                return parseInt(a.substring(1)) - parseInt(b.substring(1));
+            });
+
+            if (qKeys.length === 0) {
+                container.innerHTML = `
+                    <div class="glass-card" style="padding:40px;text-align:center;color:var(--text-muted);">
+                        No questions answered yet. Please run the analysis first.
+                    </div>`;
+                return;
+            }
+
+            qKeys.forEach(key => {
+                const qNum = key.substring(1);
+                const qVal = data[key];
+                
+                let displayVal = typeof qVal === 'object' ? JSON.stringify(qVal) : qVal;
+
+                const card = document.createElement("div");
+                card.className = "question-item glass-card";
+                card.innerHTML = `
+                    <div class="question-screenshot">
+                        <img src="/screenshots/${encodeURIComponent(worksheetId)}/Question_${qNum}.png" onerror="this.src='/static/placeholder.png'; this.parentNode.innerHTML='<span style=\\'color:var(--text-muted);font-size:12px;\\'>Screenshot not found</span>';" />
+                    </div>
+                    <div class="question-edit-panel">
+                        <div class="question-title">Question ${qNum}</div>
+                        <div class="input-group">
+                            <label for="input_${key}">Answer Input Value</label>
+                            <input type="text" id="input_${key}" class="input-field" value="${escapeHtml(displayVal)}" placeholder="e.g. A or ['True', 'False'] or \\frac{1}{2}" />
+                            <small style="font-size:11px; color:var(--text-muted);">
+                                For MCQs enter letter (e.g. <code>A</code>). For True/False list format (e.g. <code>["True", "False"]</code>). For formulas, standard LaTeX format.
+                            </small>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function saveAnswers() {
+            const payload = { topicName: topicName };
+            const inputs = document.querySelectorAll("input[id^='input_q']");
+            
+            inputs.forEach(input => {
+                const key = input.id.replace("input_", "");
+                let val = input.value.trim();
+                
+                // If it looks like a JSON array, parse it before sending
+                if (val.startsWith("[") && val.endsWith("]")) {
+                    try {
+                        val = JSON.parse(val);
+                    } catch (e) {
+                        // ignore and send as string if parsing fails
+                    }
+                }
+                payload[key] = val;
+            });
+
+            fetch(`/api/save_answers/${encodeURIComponent(worksheetId)}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === "saved") {
+                    showToast("✅ Answers saved successfully!", "#2E7D32");
+                } else {
+                    showToast("⚠️ Failed to save answers.", "#E65100");
+                }
+            })
+            .catch(() => showToast("❌ Error saving answers.", "#C62828"));
+        }
+
+        function startAnswering() {
+            const headless = document.getElementById("headlessAnswering").checked;
+            const runBtn = document.getElementById("runAnsweringBtn");
+            runBtn.disabled = true;
+
+            fetch("/api/run_answering", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    worksheet_id: worksheetId,
+                    topic_name: topicName,
+                    headless: headless
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === "started") {
+                    showToast("🚀 Answering automation started!", "#1565C0");
+                    document.getElementById("logsSpinner").style.display = "inline-block";
+                    startPollingAnswering();
+                } else {
+                    showToast("⚠️ " + (data.error || "Answering start failed."), "#E65100");
+                    runBtn.disabled = false;
+                }
+            })
+            .catch(() => {
+                showToast("❌ Connection error.", "#C62828");
+                runBtn.disabled = false;
+            });
+        }
+
+        function startPollingAnswering() {
+            if (pollingInterval) clearInterval(pollingInterval);
+            pollingInterval = setInterval(pollAnsweringStatus, 1000);
+            pollAnsweringStatus();
+        }
+
+        function pollAnsweringStatus() {
+            fetch("/api/answering/status")
+                .then(res => res.json())
+                .then(state => {
+                    updateAnsweringStatus(state);
+                    const done = state.status === "Completed" || state.status === "Failed";
+                    if (done) {
+                        clearInterval(pollingInterval);
+                        pollingInterval = null;
+                        document.getElementById("runAnsweringBtn").disabled = false;
+                        document.getElementById("logsSpinner").style.display = "none";
+                        if (state.status === "Completed") {
+                            showToast("✅ Auto-answering finished!", "#2E7D32");
+                        } else {
+                            showToast("❌ Auto-answering failed. Check console.", "#C62828");
+                        }
+                    }
+                })
+                .catch(err => console.error("Answering status poll failed:", err));
+        }
+
+        function updateAnsweringStatus(state) {
+            const statusEl = document.getElementById("answeringStatus");
+            statusEl.className = "status-badge";
+            statusEl.innerText = state.status;
+            
+            if (state.status === "Processing") statusEl.classList.add("status-processing");
+            else if (state.status === "Completed") statusEl.classList.add("status-completed");
+            else if (state.status === "Failed") statusEl.classList.add("status-failed");
+            else statusEl.classList.add("status-waiting");
+
+            const term = document.getElementById("consoleTerminal");
+            if (state.logs.length > 0) {
+                term.innerHTML = "";
+                state.logs.forEach(log => {
+                    const item = document.createElement("div");
+                    item.innerHTML = `[${log.timestamp}] ${escapeHtml(log.message)}`;
+                    term.appendChild(item);
+                });
+                term.scrollTop = term.scrollHeight;
+            }
+        }
+
+        function escapeHtml(text) {
+            if (!text) return "";
+            return text.toString()
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            loadAnswers();
+            pollAnsweringStatus();
+        });
+    </script>
+</body>
+</html>

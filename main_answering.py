@@ -53,38 +53,96 @@ _BANNER = """
 # Core pipeline
 # ---------------------------------------------------------------------------
 
-def run_automation() -> None:
-    # Load answers dictionary
-    answers_dict = {}
-    if os.path.exists(config.ANSWERS_FILE):
-        try:
-            with open(config.ANSWERS_FILE, "r", encoding="utf-8") as f:
-                answers_dict = json.load(f)
-            log.info("Loaded answers for %d worksheets from %s", len(answers_dict), config.ANSWERS_FILE)
-            print(f"Loaded answers for {len(answers_dict)} worksheets from {config.ANSWERS_FILE}")
-        except Exception as e:
-            log.error("Failed to load answers file %s: %s", config.ANSWERS_FILE, e)
-            print(f"[ERROR] Failed to load answers file: {e}")
-            return
-    else:
-        print(f"[ERROR] Answers file '{config.ANSWERS_FILE}' not found. Please create it first.")
-        return
+def load_answers_from_db(worksheet_id: str) -> dict | None:
+    """
+    Attempts to retrieve answers for the given worksheet_id from MongoDB.
+    Returns a dictionary formatted like: {"1": "A", "2": "5", "3": ["True", "True"]} or None if not found/error.
+    """
+    try:
+        from pymongo import MongoClient
+        client = MongoClient(config.MONGO_URI, serverSelectionTimeoutMS=5000)
+        # Ping the DB to fail quickly if connection is down
+        client.admin.command('ping')
         
-    if not answers_dict:
-        print("[ERROR] Answers file is empty. Nothing to answer.")
-        return
+        db = client[config.MONGO_DB]
+        ws_answers_coll = db[config.MONGO_ANSWERS_COLLECTION]
+        
+        doc = ws_answers_coll.find_one({"worksheetID": worksheet_id})
+        if not doc:
+            log.info("No answers found in MongoDB WS_answers for worksheet: %s", worksheet_id)
+            return None
+            
+        answers = {}
+        for key, val in doc.items():
+            if key.startswith("q") and key[1:].isdigit():
+                q_num = key[1:]  # e.g., "1"
+                if val:
+                    val_str = str(val).strip()
+                    # Check if it represents a JSON list (e.g. T/F matrix tables like ["True", "False"])
+                    if val_str.startswith("[") and val_str.endswith("]"):
+                        try:
+                            val = json.loads(val_str)
+                        except Exception:
+                            pass
+                    answers[q_num] = val
+        
+        if answers:
+            log.info("Successfully loaded answers for %s from MongoDB WS_answers: %s", worksheet_id, answers)
+            return answers
+            
+        return None
+    except Exception as e:
+        log.error("Failed to retrieve answers from MongoDB for %s: %s", worksheet_id, e)
+        print(f"[WARN] MongoDB connection or query failed: {e}")
+        return None
 
+
+def run_automation() -> None:
     # Get topic from user
     topic_name = prompt_topic_name()
     
     # Get worksheet ID from user
     target_ws_id = prompt_worksheet_id()
     
-    # Validate worksheet ID exists in answers JSON
-    if target_ws_id not in answers_dict:
-        print(f"\n[ERROR] Worksheet ID '{target_ws_id}' does not have any answers defined in '{config.ANSWERS_FILE}'.")
-        print("Please add answers for this worksheet to the JSON file first.")
-        return
+    # Attempt to load answers from MongoDB first
+    print(f"\nConnecting to MongoDB to search for answers for worksheet '{target_ws_id}'...")
+    answers = load_answers_from_db(target_ws_id)
+    
+    if answers:
+        print(f"[SUCCESS] Loaded answers from MongoDB for worksheet '{target_ws_id}'.")
+        # Check if any answer is marked as "Issue"
+        issues = [q for q, a in answers.items() if a == "Issue"]
+        if issues:
+            print(f"[WARN] Note: Questions {', '.join(issues)} are marked as having Issues. Answering them might fail/input 'Issue'.")
+    else:
+        print("[WARN] Could not find answers in MongoDB or connection failed. Falling back to local answers file...")
+        
+        # Load answers dictionary
+        answers_dict = {}
+        if os.path.exists(config.ANSWERS_FILE):
+            try:
+                with open(config.ANSWERS_FILE, "r", encoding="utf-8") as f:
+                    answers_dict = json.load(f)
+                log.info("Loaded answers for %d worksheets from %s", len(answers_dict), config.ANSWERS_FILE)
+                print(f"Loaded answers for {len(answers_dict)} worksheets from {config.ANSWERS_FILE}")
+            except Exception as e:
+                log.error("Failed to load answers file %s: %s", config.ANSWERS_FILE, e)
+                print(f"[ERROR] Failed to load answers file: {e}")
+                return
+        else:
+            print(f"[ERROR] Answers file '{config.ANSWERS_FILE}' not found. Please create it first.")
+            return
+            
+        if not answers_dict:
+            print("[ERROR] Answers file is empty. Nothing to answer.")
+            return
+            
+        if target_ws_id not in answers_dict:
+            print(f"\n[ERROR] Worksheet ID '{target_ws_id}' does not have any answers defined in '{config.ANSWERS_FILE}' or MongoDB.")
+            print("Please run the analysis tool first or define answers locally.")
+            return
+            
+        answers = answers_dict[target_ws_id]
 
     driver: WebDriver | None = None
 
@@ -232,7 +290,7 @@ def run_automation() -> None:
                 
             # Answer questions
             print(f"Opened worksheet {ws_id} successfully. Answering questions...")
-            ws_results = answer_worksheet_questions(driver, ws_id, answers_dict[ws_id])
+            ws_results = answer_worksheet_questions(driver, ws_id, answers)
             worksheet_results[ws_id] = { "title": ws_title, "questions": ws_results }
             
             # Exit worksheet and return to worksheet list
@@ -393,6 +451,184 @@ def run_automation() -> None:
 
 
 
+def run_answering_for_worksheet(topic_name: str, target_ws_id: str, headless: bool = False, log_callback = None) -> bool:
+    import os
+    original_headless = config.HEADLESS
+    config.HEADLESS = headless
+
+    def log_msg(msg):
+        if log_callback:
+            log_callback(msg)
+        else:
+            print(msg)
+        log.info(msg)
+
+    # Attempt to load answers from MongoDB first
+    log_msg(f"Connecting to MongoDB to search for answers for worksheet '{target_ws_id}'...")
+    answers = load_answers_from_db(target_ws_id)
+    
+    if answers:
+        log_msg(f"[SUCCESS] Loaded answers from MongoDB for worksheet '{target_ws_id}'.")
+        issues = [q for q, a in answers.items() if a == "Issue"]
+        if issues:
+            log_msg(f"[WARN] Note: Questions {', '.join(issues)} are marked as having Issues. Answering them might fail.")
+    else:
+        log_msg("[WARN] Could not find answers in MongoDB. Checking local answers file...")
+        answers_dict = {}
+        if os.path.exists(config.ANSWERS_FILE):
+            try:
+                with open(config.ANSWERS_FILE, "r", encoding="utf-8") as f:
+                    answers_dict = json.load(f)
+            except Exception as e:
+                log_msg(f"[ERROR] Failed to load answers file: {e}")
+                return False
+        else:
+            log_msg(f"[ERROR] Answers file '{config.ANSWERS_FILE}' not found.")
+            return False
+            
+        if target_ws_id not in answers_dict:
+            log_msg(f"[ERROR] Worksheet ID '{target_ws_id}' has no answers defined locally or in DB.")
+            return False
+        answers = answers_dict[target_ws_id]
+
+    driver: WebDriver | None = None
+
+    try:
+        log_msg(f"Launching browser (headless={headless})...")
+        driver = setup_driver_and_navigate()
+
+        from topic_worksheet_finder import TopicWorksheetFinder
+        finder = TopicWorksheetFinder(driver)
+        
+        # Locate the topic
+        topic_el = finder._find_topic_element(topic_name)
+        if not topic_el:
+            log_msg(f"[ERROR] Topic '{topic_name}' was not found on the dashboard.")
+            return False
+
+        log_msg(f"Topic Selected: {topic_name}")
+        
+        is_sidebar = False
+        try:
+            loc = topic_el.location
+            if loc and loc.get('x', 999) < 250:
+                is_sidebar = True
+            
+            if not is_sidebar:
+                curr = topic_el
+                while curr:
+                    classes = (curr.get_attribute("class") or "").lower()
+                    tag = curr.tag_name.lower()
+                    if "sidebar" in classes or tag in ("aside", "nav") or "menu" in classes or "nav" in classes:
+                        is_sidebar = True
+                        break
+                    curr = driver.execute_script("return arguments[0].parentElement;", curr)
+        except Exception:
+            pass
+
+        if is_sidebar:
+            log_msg("Topic is sidebar menu item. Clicking to navigate...")
+            from utils import scroll_into_view, safe_click
+            scroll_into_view(driver, topic_el)
+            safe_click(driver, topic_el)
+            time.sleep(4.0)
+            topic_container = driver.find_element(By.TAG_NAME, "body")
+        else:
+            finder._expand_topic(topic_el)
+            time.sleep(1.5)
+            try:
+                topic_container = driver.execute_script("return arguments[0].parentElement;", topic_el)
+                if not topic_container:
+                    topic_container = topic_el
+            except Exception:
+                topic_container = topic_el
+
+        # Expand sub-sections
+        finder._expand_subsections(topic_container)
+        time.sleep(1.5)
+        
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({behavior: 'instant', block: 'end'});", topic_container)
+            time.sleep(1.0)
+            driver.execute_script("arguments[0].scrollIntoView({behavior: 'instant', block: 'start'});", topic_container)
+            time.sleep(1.0)
+        except Exception:
+            pass
+            
+        # Collect cards and parse Worksheet IDs
+        cards = finder._collect_cards(topic_container)
+        ws_ids = []
+        ws_titles = {}
+        for card in cards:
+            ws_id, ws_title = finder.extract_worksheet_id_and_title(card)
+            if ws_id:
+                if ws_id not in ws_ids:
+                    ws_ids.append(ws_id)
+                ws_titles[ws_id] = ws_title
+                
+        if target_ws_id not in ws_ids:
+            log_msg(f"[ERROR] Worksheet ID '{target_ws_id}' not found under topic '{topic_name}'.")
+            return False
+
+        ws_title = ws_titles[target_ws_id]
+        log_msg(f"Opening worksheet: {ws_title} ({target_ws_id})")
+        
+        # Re-collect cards and find the matching card
+        if is_sidebar:
+            topic_container = driver.find_element(By.TAG_NAME, "body")
+        else:
+            try:
+                topic_container = driver.execute_script("return arguments[0].parentElement;", topic_el)
+                if not topic_container:
+                    topic_container = topic_el
+            except Exception:
+                topic_container = topic_el
+        cards = finder._collect_cards(topic_container)
+        matching_card = None
+        for card in cards:
+            card_id, _ = finder.extract_worksheet_id_and_title(card)
+            if card_id == target_ws_id:
+                matching_card = card
+                break
+        
+        if not matching_card:
+            log_msg(f"[ERROR] Could not find card for Worksheet ID: {target_ws_id}")
+            return False
+            
+        scroll_into_view(driver, matching_card)
+        time.sleep(0.5)
+        
+        success = finder._click_start(matching_card, topic_name, ws_title)
+        if not success:
+            log_msg(f"[ERROR] Failed to open worksheet: {ws_title} ({target_ws_id})")
+            return False
+            
+        log_msg("Opened worksheet successfully. Answering questions...")
+        ws_results = answer_worksheet_questions(driver, target_ws_id, answers)
+        
+        exit_success = exit_worksheet(driver)
+        if not exit_success:
+            log_msg("[WARN] Exit button not clicked successfully. Attempting fallback URL navigation...")
+            driver.get(config.BASE_URL)
+            time.sleep(5.0)
+            
+        log_msg(f"[SUCCESS] Finished answering Worksheet: {target_ws_id}")
+        return True
+
+    except Exception as exc:
+        log_msg(f"[ERROR] Answering error: {exc}")
+        return False
+
+    finally:
+        config.HEADLESS = original_headless
+        if driver is not None:
+            try:
+                driver.quit()
+                log_msg("Browser closed.")
+            except Exception:
+                pass
+
+
 def main() -> None:
     print(_BANNER)
     if config.EMAIL in ("<YOUR_EMAIL>", "", None):
@@ -403,3 +639,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

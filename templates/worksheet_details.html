@@ -1,0 +1,317 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Worksheet Review - Thinkster Math Automation Testing</title>
+    <meta name="description" content="Thinkster Math AI worksheet question-by-question review.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [["$","$"],["\\(","\\)"]],
+                displayMath: [["$$","$$"],["\\[","\\]"]]
+            },
+            options: { skipHtmlTags: ["script","noscript","style","textarea","pre","code"] }
+        };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        :root {
+            --primary:        #1F2937;
+            --primary-light:  #4B5563;
+            --primary-dark:   #111827;
+            --primary-soft:   #F3F4F6;
+            --accent:         #374151;
+            --success:        #10B981;
+            --success-light:  #D1FAE5;
+            --danger:         #EF4444;
+            --danger-light:   #FEE2E2;
+            --text-dark:      #111827;
+            --text-mid:       #374151;
+            --text-muted:     #6B7280;
+            --bg:             #F9FAFB;
+            --surface:        #FFFFFF;
+            --surface-2:      #F9FAFB;
+            --border:         #E5E7EB;
+            --border-light:   #F3F4F6;
+            --shadow-sm:      0 1px 3px rgba(0,0,0,0.05);
+            --shadow-md:      0 4px 6px rgba(0,0,0,0.05);
+            --shadow-lg:      0 10px 15px rgba(0,0,0,0.05);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text-dark);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        .glass-card, .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: var(--shadow-sm);
+            transition: box-shadow 0.2s, border-color 0.2s;
+        }
+
+        .glass-card:hover, .card:hover {
+            box-shadow: var(--shadow-md);
+            border-color: var(--border);
+        }
+
+        /* HEADER */
+        header {
+            background: #FFFFFF;
+            border-bottom: 2px solid #E5E7EB;
+            padding: 0 40px;
+            height: 72px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo-section { display: flex; align-items: center; gap: 14px; }
+        .logo-img { height: 44px; width: auto; object-fit: contain; border-radius: 6px; }
+        .divider-v { width: 1px; height: 36px; background: #E5E7EB; }
+
+        .logo-section h1 {
+            font-size: 19px; font-weight: 800; color: #111827;
+            letter-spacing: -0.3px; line-height: 1.2;
+        }
+
+        .logo-section h1 span {
+            display: block; font-size: 10px; font-weight: 500; color: #6B7280;
+            letter-spacing: 1.5px; text-transform: uppercase; margin-top: 1px;
+        }
+
+        .control-panel { display: flex; gap: 10px; align-items: center; }
+
+        .btn {
+            font-family: inherit; font-weight: 600; font-size: 13px;
+            padding: 9px 18px; border-radius: 8px; border: 1.5px solid transparent;
+            cursor: pointer; transition: all 0.18s ease;
+            display: inline-flex; align-items: center; gap: 7px;
+            white-space: nowrap; text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--primary); color: #fff; border-color: var(--primary);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--primary-dark); border-color: var(--primary-dark);
+            transform: translateY(-1px); box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+        }
+
+        .btn-secondary {
+            background: var(--surface); border-color: var(--border); color: var(--text-dark);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--primary-soft); border-color: var(--border);
+            color: var(--text-dark); transform: translateY(-1px);
+        }
+
+        /* MAIN */
+        .main-container {
+            max-width: 1100px; width: 100%; margin: 0 auto;
+            padding: 36px 40px; display: flex; flex-direction: column; gap: 28px; flex-grow: 1;
+        }
+
+        /* DETAIL HEADER */
+        .detail-header {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            border-bottom: 1px solid var(--border); padding-bottom: 22px;
+        }
+
+        .detail-title-block h2 {
+            font-size: 26px; font-weight: 800; color: var(--text-dark);
+            margin-bottom: 8px; letter-spacing: -0.3px;
+        }
+
+        .detail-meta-text {
+            font-size: 13px; color: var(--text-muted);
+            display: flex; flex-wrap: wrap; gap: 18px;
+        }
+
+        .detail-meta-text span strong { color: var(--text-dark); font-weight: 600; }
+
+        /* QUESTION CARDS */
+        .question-cards-container { display: flex; flex-direction: column; gap: 20px; }
+
+        .question-card { padding: 26px; display: flex; flex-direction: column; gap: 14px; }
+
+        .question-card-header {
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid var(--border-light); padding-bottom: 12px;
+        }
+
+        .question-title {
+            font-size: 17px; font-weight: 700; color: var(--text-dark);
+            display: flex; align-items: center; gap: 10px;
+        }
+
+        .question-img-name {
+            font-size: 12px; color: var(--text-muted); font-weight: 400;
+        }
+
+        .status-badge {
+            padding: 5px 12px; border-radius: 20px; font-size: 11px;
+            font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; white-space: nowrap;
+        }
+
+        .status-pass {
+            background: var(--success-light); color: var(--success);
+            border: 1px solid rgba(16,185,129,0.3);
+        }
+
+        .status-issue {
+            background: var(--danger-light); color: var(--danger);
+            border: 1px solid rgba(239,68,68,0.3);
+        }
+
+        .response-text {
+            font-size: 15px; line-height: 1.8; white-space: pre-line;
+            color: var(--text-mid); padding: 6px 0;
+        }
+
+        .mathjax-box {
+            background: var(--surface-2); border-radius: 8px;
+            padding: 16px; overflow-x: auto; border: 1px solid var(--border-light);
+        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: var(--surface); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo-section">
+            <img src="/logo" alt="Thinkster Math Logo" class="logo-img" onerror="this.style.display='none'">
+            <div class="divider-v"></div>
+            <h1>
+                Thinkster Math - Automation Testing
+                <span>Worksheet Detail Review</span>
+            </h1>
+        </div>
+        <div class="control-panel">
+            <button onclick="printPDF()" class="btn btn-primary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                </svg>
+                Export PDF
+            </button>
+            <a href="/reports" class="btn btn-secondary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+                Back to Reports
+            </a>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <!-- Worksheet Meta -->
+        <div class="detail-header">
+            <div class="detail-title-block">
+                <h2>Worksheet: <span id="wsIdTitle">-</span></h2>
+                <div class="detail-meta-text">
+                    <span>Analysis Date: <strong id="analysisTime">-</strong></span>
+                    <span>Total Questions: <strong id="totalQ">-</strong></span>
+                    <span>Issues Found: <strong id="issuesCount" style="color: var(--danger);">0</strong></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Question Cards -->
+        <div id="questionsContainer" class="question-cards-container">
+            <div class="glass-card" style="padding: 40px; text-align: center; color: var(--text-muted);">
+                Loading question review details...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const worksheetId = "{{ worksheet_id }}";
+
+        function loadWorksheetDetails() {
+            fetch(`/api/db/worksheet/${encodeURIComponent(worksheetId)}`)
+                .then(res => res.json())
+                .then(questions => renderDetails(questions))
+                .catch(() => {
+                    document.getElementById("questionsContainer").innerHTML = `
+                        <div class="glass-card" style="padding:40px;text-align:center;color:var(--danger);">
+                            Failed to load details. Ensure the database connection is available.
+                        </div>`;
+                });
+        }
+
+        function renderDetails(questions) {
+            questions.sort((a, b) => a.question_number - b.question_number);
+            document.getElementById("wsIdTitle").innerText = worksheetId;
+
+            if (questions.length === 0) {
+                document.getElementById("questionsContainer").innerHTML = `
+                    <div class="glass-card" style="padding:40px;text-align:center;color:var(--text-muted);">
+                        No details found for this worksheet in MongoDB.
+                    </div>`;
+                return;
+            }
+
+            document.getElementById("analysisTime").innerText = questions[0].analysis_time || "-";
+            document.getElementById("totalQ").innerText = questions.length;
+            document.getElementById("issuesCount").innerText = questions.filter(q => q.status === "Issue").length;
+
+            const container = document.getElementById("questionsContainer");
+            container.innerHTML = "";
+
+            questions.forEach(q => {
+                const card = document.createElement("div");
+                card.className = "question-card glass-card";
+                const isIssue = q.status === "Issue";
+                card.innerHTML = `
+                    <div class="question-card-header">
+                        <div class="question-title">
+                            Question ${q.question_number}
+                            <span class="question-img-name">(${escapeHtml(q.image_name)})</span>
+                        </div>
+                        <span class="status-badge ${isIssue ? "status-issue" : "status-pass"}">${isIssue ? "Issue Detected" : "Passed Review"}</span>
+                    </div>
+                    <div class="response-text mathjax-box">${escapeHtml(q.ai_response)}</div>`;
+                container.appendChild(card);
+            });
+
+            if (window.MathJax && window.MathJax.typesetPromise) window.MathJax.typesetPromise();
+        }
+
+        function escapeHtml(text) {
+            if (!text) return "";
+            return text.toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
+        }
+
+        function printPDF() {
+            window.open(`/api/export/pdf/${encodeURIComponent(worksheetId)}`, "_blank");
+        }
+
+        window.addEventListener("DOMContentLoaded", loadWorksheetDetails);
+    </script>
+</body>
+</html>

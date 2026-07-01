@@ -128,3 +128,11 @@ MATH_EXPERT_PROMPT = (
     "For True/False questions, provide the correct sequence (e.g., T, F, T, T) and report any answer-key mistakes.\n"
     "Always double-check calculations before giving the final response."
 )
+
+# ---------------------------------------------------------------------------
+# MongoDB Settings
+# ---------------------------------------------------------------------------
+# MongoDB connection URI (shared with the analysis component)
+MONGO_URI = "mongodb+srv://admin:admin123@cluster0.eu3cz1g.mongodb.net/?appName=Cluster0"
+MONGO_DB = "Thinkster_testing"
+MONGO_ANSWERS_COLLECTION = "WS_answers"

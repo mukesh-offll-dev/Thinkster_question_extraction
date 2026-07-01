@@ -1,0 +1,455 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reports Portal - Thinkster Math Automation Testing</title>
+    <meta name="description" content="Thinkster Math AI worksheet analysis reports portal.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary:        #1F2937;
+            --primary-light:  #4B5563;
+            --primary-dark:   #111827;
+            --primary-soft:   #F3F4F6;
+            --accent:         #374151;
+            --success:        #10B981;
+            --success-light:  #D1FAE5;
+            --danger:         #EF4444;
+            --danger-light:   #FEE2E2;
+            --text-dark:      #111827;
+            --text-mid:       #374151;
+            --text-muted:     #6B7280;
+            --bg:             #F9FAFB;
+            --surface:        #FFFFFF;
+            --surface-2:      #F9FAFB;
+            --border:         #E5E7EB;
+            --border-light:   #F3F4F6;
+            --shadow-sm:      0 1px 3px rgba(0,0,0,0.05);
+            --shadow-md:      0 4px 6px rgba(0,0,0,0.05);
+            --shadow-lg:      0 10px 15px rgba(0,0,0,0.05);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text-dark);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        .glass-card, .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: var(--shadow-sm);
+            transition: box-shadow 0.2s, border-color 0.2s;
+        }
+
+        .glass-card:hover, .card:hover {
+            box-shadow: var(--shadow-md);
+            border-color: var(--border);
+        }
+
+        /* HEADER */
+        header {
+            background: #FFFFFF;
+            border-bottom: 2px solid #E5E7EB;
+            padding: 0 40px;
+            height: 72px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo-section { display: flex; align-items: center; gap: 14px; }
+
+        .logo-img {
+            height: 44px; width: auto; object-fit: contain; border-radius: 6px;
+        }
+
+        .divider-v { width: 1px; height: 36px; background: #E5E7EB; }
+
+        .logo-section h1 {
+            font-size: 19px; font-weight: 800; color: #111827; letter-spacing: -0.3px; line-height: 1.2;
+        }
+
+        .logo-section h1 span {
+            display: block; font-size: 10px; font-weight: 500; color: #6B7280;
+            letter-spacing: 1.5px; text-transform: uppercase; margin-top: 1px;
+        }
+
+        .control-panel { display: flex; gap: 10px; align-items: center; }
+
+        .btn {
+            font-family: inherit; font-weight: 600; font-size: 13px;
+            padding: 9px 18px; border-radius: 8px; border: 1.5px solid transparent;
+            cursor: pointer; transition: all 0.18s ease;
+            display: inline-flex; align-items: center; gap: 7px;
+            white-space: nowrap; text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--primary); color: #fff; border-color: var(--primary);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--primary-dark); border-color: var(--primary-dark);
+            transform: translateY(-1px); box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+        }
+
+        .btn-secondary {
+            background: var(--surface); border-color: var(--border); color: var(--text-dark);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--primary-soft); border-color: var(--border);
+            color: var(--text-dark); transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: var(--danger); border-color: var(--danger);
+            color: #FFFFFF;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: #B71C1C; transform: translateY(-1px);
+        }
+
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
+
+        /* MAIN */
+        .main-container {
+            max-width: 1280px; width: 100%; margin: 0 auto;
+            padding: 32px 40px; display: flex; flex-direction: column; gap: 24px; flex-grow: 1;
+        }
+
+        /* BATCH CARD */
+        .excel-exporter-card {
+            padding: 22px 26px;
+            display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: center;
+        }
+
+        .exporter-left h2 { font-size: 17px; font-weight: 700; color: var(--text-dark); margin-bottom: 4px; }
+        .exporter-left p { font-size: 13px; color: var(--text-muted); }
+
+        .exporter-right { display: flex; gap: 10px; align-items: center; }
+
+        /* CHECKBOX */
+        input[type="checkbox"].ws-checkbox,
+        input[type="checkbox"]#selectAllCheck {
+            width: 17px; height: 17px; accent-color: var(--primary); cursor: pointer;
+        }
+
+        /* SEARCH */
+        .search-container {
+            display: flex; align-items: center; width: 100%; max-width: 420px; position: relative;
+        }
+
+        .search-input {
+            width: 100%;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text-dark);
+            padding: 12px 18px 12px 44px;
+            border-radius: 10px; font-family: inherit; font-size: 14px;
+            outline: none; transition: all 0.25s;
+        }
+
+        .search-input::placeholder { color: var(--text-muted); }
+
+        .search-input:focus {
+            border-color: var(--primary-light);
+            box-shadow: 0 0 0 3px rgba(75,85,99,0.1);
+        }
+
+        .search-icon {
+            position: absolute; left: 14px; width: 17px; height: 17px;
+            color: var(--text-muted); pointer-events: none;
+        }
+
+        /* GRID HEADER */
+        .grid-header {
+            display: flex; justify-content: space-between; align-items: center; margin-top: 4px;
+        }
+
+        .grid-header h2 { font-size: 18px; font-weight: 700; color: var(--text-dark); }
+
+        label[for="selectAllCheck"] {
+            font-size: 14px; font-weight: 600; cursor: pointer; color: var(--text-muted);
+        }
+
+        /* WORKSHEET CARDS */
+        .worksheets-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px;
+        }
+
+        .worksheet-card {
+            padding: 22px; display: flex; flex-direction: column; gap: 14px;
+            position: relative; cursor: pointer;
+        }
+
+        .worksheet-card-header { display: flex; justify-content: space-between; align-items: center; }
+
+        .worksheet-id-title {
+            font-size: 17px; font-weight: 700; color: var(--text-dark);
+            letter-spacing: 0.3px; transition: color 0.2s;
+        }
+
+        .worksheet-id-title:hover { color: var(--primary-light); }
+
+        .delete-icon-btn {
+            background: transparent; border: none; color: var(--text-muted);
+            cursor: pointer; padding: 6px; border-radius: 6px;
+            display: inline-flex; align-items: center; justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .delete-icon-btn:hover {
+            color: var(--danger); background: var(--danger-light);
+        }
+
+        .arrow-icon {
+            width: 18px; height: 18px; color: var(--text-muted); cursor: pointer;
+            transition: transform 0.2s, color 0.2s; flex-shrink: 0;
+        }
+
+        .arrow-icon:hover { transform: translateX(4px); color: var(--text-dark); }
+
+        .worksheet-stats {
+            display: flex; justify-content: space-between; font-size: 13px;
+            border-top: 1px solid var(--border-light); padding-top: 12px;
+            color: var(--text-muted);
+        }
+
+        .worksheet-stats span { display: flex; align-items: center; gap: 4px; }
+
+        .badge-issues { color: var(--danger); font-weight: 700; }
+        .badge-passed { color: var(--success); font-weight: 700; }
+
+        /* TOAST */
+        .toast {
+            visibility: hidden; min-width: 240px;
+            background: var(--surface); border: 1px solid var(--border);
+            color: var(--text-dark); text-align: center; border-radius: 8px;
+            padding: 14px 20px; position: fixed; z-index: 1001;
+            right: 30px; bottom: 30px; font-size: 14px; font-weight: 500;
+            box-shadow: var(--shadow-lg); transform: translateY(20px);
+            opacity: 0; transition: all 0.3s ease;
+        }
+
+        .toast.show { visibility: visible; transform: translateY(0); opacity: 1; }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: var(--surface); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo-section">
+            <img src="/logo" alt="Thinkster Math Logo" class="logo-img" onerror="this.style.display='none'">
+            <div class="divider-v"></div>
+            <h1>
+                Thinkster Math - Automation Testing
+                <span>Reports Portal</span>
+            </h1>
+        </div>
+        <div class="control-panel">
+            <a href="/" class="btn btn-secondary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="9"></rect>
+                    <rect x="14" y="3" width="7" height="5"></rect>
+                    <rect x="14" y="12" width="7" height="9"></rect>
+                    <rect x="3" y="16" width="7" height="5"></rect>
+                </svg>
+                Dashboard
+            </a>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <!-- Batch Operations Card -->
+        <div class="excel-exporter-card glass-card">
+            <div class="exporter-left">
+                <h2>Batch Operations</h2>
+                <p>Select worksheets to export a combined PDF report with MathJax math rendering, or delete reviews from the database.</p>
+            </div>
+            <div class="exporter-right">
+                <span style="font-size: 13px; color: var(--text-muted); margin-right: 4px;">
+                    <strong id="selectedCount" style="color: var(--text-dark);">0</strong> selected
+                </span>
+                <button id="batchExportBtn" class="btn btn-primary" onclick="exportSelectedPDF()" disabled>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                    </svg>
+                    Export PDF
+                </button>
+                <button id="batchDeleteBtn" class="btn btn-danger" onclick="deleteSelectedWorksheets()" disabled>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                    Delete Selected
+                </button>
+            </div>
+        </div>
+
+        <!-- Search & Grid Header -->
+        <div class="grid-header">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="checkbox" id="selectAllCheck" onchange="toggleSelectAll()">
+                <label for="selectAllCheck">Select All</label>
+            </div>
+            <div class="search-container">
+                <svg class="search-icon" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="searchInput" class="search-input" placeholder="Search by Worksheet ID..." oninput="filterWorksheets()">
+            </div>
+        </div>
+
+        <!-- Worksheet Cards Grid -->
+        <div id="worksheetsList" class="worksheets-grid">
+            <div class="no-results">Loading analyzed worksheets...</div>
+        </div>
+    </div>
+
+    <div id="toastNotification" class="toast"></div>
+
+    <script>
+        let worksheetsData = [];
+
+        function showToast(message, duration = 3500) {
+            const toast = document.getElementById("toastNotification");
+            toast.innerText = message;
+            toast.classList.add("show");
+            setTimeout(() => { toast.classList.remove("show"); }, duration);
+        }
+
+        function loadWorksheets() {
+            fetch("/api/db/worksheets")
+                .then(res => res.json())
+                .then(data => {
+                    worksheetsData = data;
+                    renderWorksheets(worksheetsData);
+                    document.getElementById("selectAllCheck").checked = false;
+                    updateSelection();
+                })
+                .catch(err => {
+                    document.getElementById("worksheetsList").innerHTML = `
+                        <div class="no-results" style="color: var(--danger);">
+                            Failed to connect to database. Please make sure the server is running.
+                        </div>`;
+                });
+        }
+
+        function renderWorksheets(list) {
+            const container = document.getElementById("worksheetsList");
+            if (list.length === 0) {
+                container.innerHTML = `<div class="no-results">No analyzed worksheets found matching your search.</div>`;
+                return;
+            }
+
+            container.innerHTML = "";
+            list.forEach(ws => {
+                const card = document.createElement("div");
+                card.className = "worksheet-card glass-card";
+                card.innerHTML = `
+                    <div class="worksheet-card-header">
+                        <div style="display:flex;align-items:center;gap:12px;">
+                            <input type="checkbox" class="ws-checkbox" value="${ws.worksheet_id}" onchange="updateSelection()" onclick="event.stopPropagation()">
+                            <span class="worksheet-id-title" onclick="navigateToDetail('${escapeHtml(ws.worksheet_id)}')">${escapeHtml(ws.worksheet_id)}</span>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <button class="delete-icon-btn" onclick="deleteSingleWorksheet(event,'${escapeHtml(ws.worksheet_id)}')" title="Delete">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                            </button>
+                            <svg class="arrow-icon" onclick="navigateToDetail('${escapeHtml(ws.worksheet_id)}')" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                                <polyline points="12 5 19 12 12 19"></polyline>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="worksheet-stats" onclick="navigateToDetail('${escapeHtml(ws.worksheet_id)}')">
+                        <span class="badge-passed">&#10003; ${ws.passed_count} Passed</span>
+                        <span class="badge-issues">&#9888; ${ws.issues_count} Issues</span>
+                        <span>Q: ${ws.total_questions}</span>
+                    </div>`;
+                container.appendChild(card);
+            });
+        }
+
+        function filterWorksheets() {
+            const query = document.getElementById("searchInput").value.trim().toLowerCase();
+            renderWorksheets(worksheetsData.filter(ws => ws.worksheet_id.toLowerCase().includes(query)));
+        }
+
+        function navigateToDetail(wsId) { window.location.href = `/reports/${encodeURIComponent(wsId)}`; }
+
+        function toggleSelectAll() {
+            const checked = document.getElementById("selectAllCheck").checked;
+            document.querySelectorAll(".ws-checkbox").forEach(cb => cb.checked = checked);
+            updateSelection();
+        }
+
+        function updateSelection() {
+            const count = document.querySelectorAll(".ws-checkbox:checked").length;
+            document.getElementById("selectedCount").innerText = count;
+            document.getElementById("batchExportBtn").disabled = count === 0;
+            document.getElementById("batchDeleteBtn").disabled = count === 0;
+        }
+
+        function deleteSingleWorksheet(event, wsId) {
+            event.stopPropagation();
+            if (!confirm(`Delete analysis report for ${wsId}?`)) return;
+            fetch("/api/db/delete", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({worksheet_ids:[wsId]}) })
+                .then(r => r.json())
+                .then(d => { showToast(d.status === "deleted" ? `Deleted ${wsId}.` : "Error: " + d.error); if (d.status === "deleted") loadWorksheets(); })
+                .catch(() => showToast("Connection error while deleting."));
+        }
+
+        function deleteSelectedWorksheets() {
+            const ids = Array.from(document.querySelectorAll(".ws-checkbox:checked")).map(cb => cb.value);
+            if (!ids.length || !confirm(`Delete ${ids.length} selected reports?`)) return;
+            fetch("/api/db/delete", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({worksheet_ids:ids}) })
+                .then(r => r.json())
+                .then(d => { showToast(d.status === "deleted" ? `Deleted ${d.count} reports.` : "Error: " + d.error); if (d.status === "deleted") loadWorksheets(); })
+                .catch(() => showToast("Connection error."));
+        }
+
+        function exportSelectedPDF() {
+            const ids = Array.from(document.querySelectorAll(".ws-checkbox:checked")).map(cb => cb.value);
+            if (!ids.length) return;
+            showToast(`Opening PDF for ${ids.length} worksheet(s)...`);
+            window.open(`/api/export/pdf/batch?ids=${encodeURIComponent(ids.join(","))}`, "_blank");
+        }
+
+        // Escape helper
+        function escapeHtml(text) {
+            if (!text) return "";
+            return text.toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
+        }
+
+        window.addEventListener("DOMContentLoaded", loadWorksheets);
+    </script>
+</body>
+</html>

@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thinkster Math - Automation Testing</title>
+    <meta name="description" content="Thinkster Math AI-powered worksheet automation testing dashboard.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']]
+            },
+            options: {
+                skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+            }
+        };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        :root {
+            --primary:        #1F2937;
+            --primary-light:  #4B5563;
+            --primary-dark:   #111827;
+            --primary-soft:   #F3F4F6;
+            --accent:         #374151;
+            --accent-light:   #E5E7EB;
+            --success:        #10B981;
+            --success-light:  #D1FAE5;
+            --danger:         #EF4444;
+            --danger-light:   #FEE2E2;
+            --warning:        #F59E0B;
+            --text-dark:      #111827;
+            --text-mid:       #374151;
+            --text-muted:     #6B7280;
+            --bg:             #F9FAFB;
+            --bg-2:           #F3F4F6;
+            --surface:        #FFFFFF;
+            --surface-2:      #F9FAFB;
+            --border:         #E5E7EB;
+            --border-light:   #F3F4F6;
+            --shadow-sm:      0 1px 3px rgba(0,0,0,0.05);
+            --shadow-md:      0 4px 6px rgba(0,0,0,0.05);
+            --shadow-lg:      0 10px 15px rgba(0,0,0,0.05);
+            /* legacy aliases */
+            --glass-bg:       #FFFFFF;
+            --glass-border:   #E5E7EB;
+            --glass-glow:     rgba(0,0,0,0.02);
+            --text-main:      #111827;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text-dark);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        /* Card */
+        .glass-card, .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: var(--shadow-sm);
+            transition: box-shadow 0.2s, border-color 0.2s;
+        }
+
+        .glass-card:hover, .card:hover {
+            box-shadow: var(--shadow-md);
+            border-color: var(--border);
+        }
+
+        header {
+            background: #FFFFFF;
+            border-bottom: 2px solid #E5E7EB;
+            padding: 0 40px;
+            height: 72px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .logo-img {
+            height: 44px;
+            width: auto;
+            object-fit: contain;
+            border-radius: 6px;
+        }
+
+        .logo-section h1 {
+            font-size: 19px;
+            font-weight: 800;
+            color: #111827;
+            letter-spacing: -0.3px;
+            line-height: 1.2;
+        }
+
+        .logo-section h1 span {
+            display: block;
+            font-size: 10px;
+            font-weight: 500;
+            color: #6B7280;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            margin-top: 1px;
+        }
+
+        .divider-v {
+            width: 1px;
+            height: 36px;
+            background: #E5E7EB;
+        }
+
+        .control-panel {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .btn {
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 13px;
+            padding: 9px 18px;
+            border-radius: 8px;
+            border: 1.5px solid transparent;
+            cursor: pointer;
+            transition: all 0.18s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            white-space: nowrap;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--primary-dark);
+            border-color: var(--primary-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: #fff;
+            border-color: var(--danger);
+            box-shadow: 0 2px 8px rgba(198,40,40,0.2);
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: #B71C1C;
+            border-color: #B71C1C;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(198,40,40,0.35);
+        }
+
+        .btn-secondary {
+            background: var(--surface);
+            border-color: var(--border);
+            color: var(--text-mid);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--primary-soft);
+            border-color: var(--border);
+            color: var(--text-dark);
+            transform: translateY(-1px);
+        }
+
+        .btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        .main-container {
+            max-width: 1600px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 30px 40px;
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 30px;
+            flex-grow: 1;
+        }
+
+        .dashboard-content {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+
+        /* Top Progress Summary */
+        .progress-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .stat-card {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            border-left: 4px solid var(--primary);
+        }
+
+        .stat-card .label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+
+        .stat-card .value {
+            font-size: 30px;
+            font-weight: 800;
+            color: var(--primary-dark);
+            display: flex;
+            align-items: baseline;
+            gap: 5px;
+        }
+
+        .stat-card .sub-value {
+            font-size: 13px;
+            font-weight: 400;
+            color: var(--text-muted);
+        }
+
+        .progress-card {
+            grid-column: span 2;
+            padding: 18px 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            border-left: 4px solid var(--accent);
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 10px;
+            background: var(--border-light);
+            border-radius: 5px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: var(--primary);
+            width: 0%;
+            border-radius: 5px;
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 3px solid var(--border-light);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .logs-panel {
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 480px;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface-2);
+            border-radius: 12px 12px 0 0;
+        }
+
+        .panel-header h2 {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .log-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 14px;
+        }
+
+        .log-item {
+            background: var(--surface-2);
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            padding: 12px 14px;
+            animation: slideIn 0.25s ease-out;
+        }
+
+        .log-item.log-issue {
+            border-left: 3px solid var(--danger);
+            background: var(--danger-light);
+        }
+
+        .log-item.log-pass {
+            border-left: 3px solid var(--success);
+            background: var(--success-light);
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .log-meta {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            font-size: 11px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-light);
+            padding-bottom: 5px;
+        }
+
+        .log-meta span { display: flex; align-items: center; gap: 4px; }
+
+        .log-badge {
+            background: var(--primary-soft);
+            color: var(--text-dark);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: 11px;
+            border: 1px solid var(--border);
+        }
+
+        .log-body {
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-line;
+            color: var(--text-mid);
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .sidebar-card {
+            padding: 20px;
+        }
+
+        .sidebar-card h3 {
+            font-size: 11px;
+            font-weight: 700;
+            margin-bottom: 14px;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 8px;
+        }
+
+        .info-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .info-list li {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            align-items: center;
+        }
+
+        .info-list li .lbl { color: var(--text-muted); }
+        .info-list li .val { font-weight: 700; color: var(--text-dark); }
+
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            display: inline-block;
+        }
+
+        .status-waiting {
+            background: rgba(255,255,255,0.06);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+        }
+
+        .status-processing {
+            background: var(--primary-soft);
+            color: var(--primary);
+            border: 1px solid var(--border);
+        }
+
+        .status-completed {
+            background: var(--success-light);
+            color: var(--success);
+            border: 1px solid rgba(0,200,83,0.3);
+        }
+
+        .status-stopped {
+            background: var(--danger-light);
+            color: var(--danger);
+            border: 1px solid rgba(239,83,80,0.3);
+        }
+
+        .report-section {
+            padding: 24px;
+            display: none;
+        }
+
+        .report-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--primary-soft);
+            padding-bottom: 14px;
+            margin-bottom: 18px;
+        }
+
+        .report-header h2 {
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--primary-dark);
+        }
+
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        table.report-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        table.report-table th, table.report-table td {
+            padding: 11px 14px;
+            border-bottom: 1px solid var(--border-light);
+            border-right: 1px solid var(--border-light);
+        }
+
+        table.report-table th {
+            background: var(--surface-2);
+            font-weight: 700;
+            color: var(--primary);
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.6px;
+            white-space: nowrap;
+        }
+
+        table.report-table td {
+            background: var(--surface);
+            vertical-align: top;
+            max-width: 280px;
+            color: var(--text-mid);
+        }
+
+        table.report-table tr:hover td { background: var(--surface-2); }
+
+        .cell-content {
+            max-height: 80px;
+            overflow-y: auto;
+            white-space: pre-line;
+            font-size: 12px;
+            color: var(--text-mid);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            transition: background 0.15s;
+        }
+
+        .cell-content:hover { background: var(--border-light); }
+
+        .cell-badge {
+            display: inline-block;
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .cell-badge-issue {
+            background: var(--danger-light);
+            color: var(--danger);
+            border: 1px solid rgba(239,83,80,0.3);
+        }
+
+        .cell-badge-ok {
+            background: var(--success-light);
+            color: var(--success);
+            border: 1px solid rgba(0,200,83,0.3);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0; top: 0;
+            width: 100%; height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+            backdrop-filter: blur(4px);
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .modal-content {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            max-width: 820px;
+            width: 100%;
+            box-shadow: var(--shadow-lg);
+            animation: modalFade 0.25s ease;
+            display: flex;
+            flex-direction: column;
+            max-height: 85vh;
+        }
+
+        @keyframes modalFade {
+            from { opacity: 0; transform: scale(0.96); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+
+        .modal-header {
+            padding: 16px 22px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--surface-2);
+            border-radius: 14px 14px 0 0;
+        }
+
+        .modal-header h3 {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .modal-close {
+            color: var(--text-muted);
+            font-size: 22px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.15s;
+            line-height: 1;
+        }
+
+        .modal-close:hover { color: var(--danger); }
+
+        .modal-body {
+            padding: 24px;
+            overflow-y: auto;
+            font-size: 15px;
+            line-height: 1.7;
+            white-space: pre-line;
+            color: var(--text-mid);
+        }
+
+        .toast {
+            visibility: hidden;
+            min-width: 240px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--text-dark);
+            text-align: center;
+            border-radius: 8px;
+            padding: 14px 20px;
+            position: fixed;
+            z-index: 1001;
+            right: 30px;
+            bottom: 30px;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: var(--shadow-lg);
+            transform: translateY(20px);
+            opacity: 0;
+            transition: all 0.3s ease;
+        }
+
+        .toast.show {
+            visibility: visible;
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: var(--border-light); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: var(--accent-light); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--primary-light); }
+
+        .export-btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo-section">
+            <img src="/logo" alt="Thinkster Math Logo" class="logo-img" onerror="this.style.display='none'">
+            <div class="divider-v"></div>
+            <h1>
+                Thinkster Math - Automation Testing
+                <span>AI Worksheet Review Dashboard</span>
+            </h1>
+        </div>
+        <div class="control-panel">
+            <a href="/reports" class="btn btn-secondary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                </svg>
+                Reports
+            </a>
+            <button id="stopBtn" class="btn btn-danger" onclick="stopAnalysis()" style="display:none;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="4" y="4" width="16" height="16" rx="2"/>
+                </svg>
+                Stop
+            </button>
+            <button id="clearBtn" class="btn" onclick="clearDashboard()" style="background:var(--surface-2); border:1.5px solid var(--border); color:var(--text-mid);">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                    <polyline points="1 4 1 10 7 10"/>
+                    <path d="M3.51 15a9 9 0 1 0 .49-4.54"/>
+                </svg>
+                Clear
+            </button>
+            <button id="startBtn" class="btn btn-primary" onclick="startAnalysis()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                Start Analysis
+            </button>
+            <button id="showReportBtn" class="btn btn-secondary" onclick="scrollToReport()" disabled>
+                View Report
+            </button>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <div class="dashboard-content">
+            <!-- Run Configuration Card -->
+            <div class="glass-card" style="padding: 24px; display: flex; flex-direction: column; gap: 18px;">
+                <h3 style="font-size: 13px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.8px; border-bottom: 2px solid var(--border); padding-bottom: 8px; margin-bottom: 5px;">
+                    Pipeline Configuration
+                </h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <label for="pipelineTopic" style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Topic Name</label>
+                        <select id="pipelineTopic" onchange="toggleManualTopic()" style="font-family: inherit; font-size: 13px; padding: 9px 12px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-dark); outline: none; transition: border-color 0.2s;">
+                            <option value="Complex Numbers">Complex Numbers</option>
+                            <option value="Algebra 2 Foundations">Algebra 2 Foundations</option>
+                            <option value="Number Representation">Number Representation</option>
+                            <option value="Number Relation">Number Relation</option>
+                            <option value="Algebra">Algebra</option>
+                            <option value="Functions & Function Notation">Functions & Function Notation</option>
+                            <option value="Multiplication">Multiplication</option>
+                            <option value="Division">Division</option>
+                            <option value="Geometry">Geometry</option>
+                            <option value="__manual__">Manual entering...</option>
+                        </select>
+                        <input id="pipelineTopicManual" placeholder="Enter custom topic name..." style="display: none; font-family: inherit; font-size: 13px; padding: 9px 12px; border-radius: 8px; border: 1.5px solid var(--border); outline: none; margin-top: 8px; width: 100%;" />
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <label for="pipelineWorksheetId" style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Worksheet ID</label>
+                        <input id="pipelineWorksheetId" placeholder="e.g. AQCONAL202" style="font-family: inherit; font-size: 13px; padding: 9px 12px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-dark); outline: none; transition: border-color 0.2s; width: 100%;" />
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 5px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="skipExtraction" style="cursor: pointer; width: 15px; height: 15px;" />
+                        <label for="skipExtraction" style="font-size: 13px; color: var(--text-mid); cursor: pointer; user-select: none;">Skip screenshot extraction (use existing files)</label>
+                    </div>
+                    <div>
+                        <button id="verifyAnswersBtn" class="btn btn-secondary" onclick="goToCheckPage()" style="display: none; background: var(--success-light); color: var(--success); border: 1px solid rgba(16,185,129,0.3);">
+                            Verify & Answer Worksheet
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress Tracker Grid -->
+            <div class="progress-grid">
+                <!-- Status Card -->
+                <div class="stat-card glass-card">
+                    <span class="label">System Status</span>
+                    <span class="value">
+                        <span id="statusText" class="status-badge status-waiting">Waiting</span>
+                    </span>
+                </div>
+                
+                <!-- Worksheets Count Card -->
+                <div class="stat-card glass-card">
+                    <span class="label">Worksheets</span>
+                    <span class="value">
+                        <span id="worksheetsCount">0</span>
+                        <span class="sub-value">/ <span id="totalWorksheets">0</span></span>
+                    </span>
+                </div>
+
+                <!-- Questions Count Card -->
+                <div class="stat-card glass-card">
+                    <span class="label">Questions</span>
+                    <span class="value">
+                        <span id="questionsCount">0</span>
+                        <span class="sub-value">/ <span id="totalQuestions">0</span></span>
+                    </span>
+                </div>
+
+                <!-- Progress Bar Card -->
+                <div class="progress-card glass-card">
+                    <div class="progress-header">
+                        <span class="label">Overall Progress</span>
+                        <span class="value" style="font-size: 16px;" id="percentageText">0%</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div id="progressBar" class="progress-bar-fill"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live Logs Panel -->
+            <div class="logs-panel glass-card">
+                <div class="panel-header">
+                    <h2>Live AI Analysis Log</h2>
+                    <div id="processingSpinner" style="display: none;" class="spinner"></div>
+                </div>
+                <div id="logContainer" class="log-container">
+                    <div style="flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; color:var(--text-muted); text-align:center; padding:40px;">
+                        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:.35;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <p style="font-size:14px; font-weight:500;">No analysis active</p>
+                        <small style="font-size:12px; opacity:.7;">Click &ldquo;Start Analysis&rdquo; to begin</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar Info -->
+        <div class="sidebar">
+            <div class="sidebar-card glass-card">
+                <h3>Current Item Details</h3>
+                <ul class="info-list">
+                    <li>
+                        <span class="lbl">Worksheet ID</span>
+                        <span id="sidebarWorksheet" class="val">-</span>
+                    </li>
+                    <li>
+                        <span class="lbl">Question Num</span>
+                        <span id="sidebarQuestion" class="val">-</span>
+                    </li>
+                    <li>
+                        <span class="lbl">Issues Detected</span>
+                        <span id="sidebarIssues" class="val" style="color: var(--danger);">0</span>
+                    </li>
+                    <li>
+                        <span class="lbl">Passed Review</span>
+                        <span id="sidebarPassed" class="val" style="color: var(--success);">0</span>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="sidebar-card glass-card">
+                <h3>Execution Details</h3>
+                <ul class="info-list">
+                    <li>
+                        <span class="lbl">Start Time</span>
+                        <span id="sidebarStart" class="val">-</span>
+                    </li>
+                    <li>
+                        <span class="lbl">End Time</span>
+                        <span id="sidebarEnd" class="val">-</span>
+                    </li>
+                    <li>
+                        <span class="lbl">Elapsed Time</span>
+                        <span id="sidebarElapsed" class="val">-</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Table Section -->
+    <div id="reportSection" class="report-section glass-card main-container" style="display: none; grid-template-columns: 1fr; margin-bottom: 40px;">
+        <div class="report-header">
+            <h2>Worksheet Analysis Report Matrix</h2>
+            <div class="export-btn-group">
+                <a id="exportExcelBtn" href="/api/export/excel" class="btn btn-secondary" target="_blank">
+                    Excel Export
+                </a>
+                <a id="exportHtmlBtn" href="/api/export/html" class="btn btn-secondary" download="worksheet_report.html">
+                    HTML Export
+                </a>
+                <a id="exportPdfBtn" href="/api/export/pdf" class="btn btn-primary" target="_blank">
+                    Print PDF
+                </a>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table id="reportTable" class="report-table">
+                <thead>
+                    <tr id="reportTableHeader">
+                        <!-- Dynamic headers go here -->
+                    </tr>
+                </thead>
+                <tbody id="reportTableBody">
+                    <!-- Dynamic rows go here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal for Full Text View -->
+    <div id="responseModal" class="modal" onclick="closeModal(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3 id="modalTitle">AI Review Details</h3>
+                <span class="modal-close" onclick="document.getElementById('responseModal').style.display='none'">&times;</span>
+            </div>
+            <div id="modalBody" class="modal-body">
+                <!-- Text contents go here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toastNotification" class="toast"></div>
+
+    <script>
+        let pollingInterval = null;
+        let lastLogCount = 0;
+
+        function showToast(message, color, duration = 3500) {
+            const toast = document.getElementById("toastNotification");
+            toast.innerText = message;
+            toast.style.background = color || "var(--surface-2)";
+            toast.style.color = "#E8EEF7";
+            toast.classList.add("show");
+            setTimeout(() => { toast.classList.remove("show"); }, duration);
+        }
+
+        function clearDashboard() {
+            if (document.getElementById('startBtn').style.display === 'none') {
+                showToast('⚠️ Stop the analysis first before clearing.', '#B45309');
+                return;
+            }
+            fetch('/api/reset', { method: 'POST' })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.status === 'reset') {
+                        lastLogCount = 0;
+                        document.getElementById('logContainer').innerHTML = `
+                            <div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:var(--text-muted);text-align:center;padding:40px;">
+                                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:.35;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                                <p style="font-size:14px;font-weight:500;">Dashboard cleared</p>
+                                <small style="font-size:12px;opacity:.7;">Click &ldquo;Start Analysis&rdquo; to begin</small>
+                            </div>`;
+                        document.getElementById('reportSection').style.display = 'none';
+                        document.getElementById('showReportBtn').disabled = true;
+                        pollStatus();
+                        showToast('🔄 Dashboard cleared and reset!', '#0D47A1');
+                    } else {
+                        showToast('⚠️ ' + d.message, '#B45309');
+                    }
+                })
+                .catch(() => showToast('❌ Failed to reset.', '#7F1D1D'));
+        }
+
+        function toggleManualTopic() {
+            const select = document.getElementById("pipelineTopic");
+            const manual = document.getElementById("pipelineTopicManual");
+            if (select.value === "__manual__") {
+                manual.style.display = "block";
+            } else {
+                manual.style.display = "none";
+            }
+        }
+
+        function goToCheckPage() {
+            const wsId = document.getElementById("pipelineWorksheetId").value.trim();
+            if (wsId) {
+                window.location.href = `/check/${encodeURIComponent(wsId)}`;
+            } else {
+                showToast("⚠️ Enter or select a worksheet ID first.", "#E65100");
+            }
+        }
+
+        function startAnalysis() {
+            const startBtn = document.getElementById("startBtn");
+            const stopBtn  = document.getElementById("stopBtn");
+            
+            const wsId = document.getElementById("pipelineWorksheetId").value.trim();
+            let topicName = document.getElementById("pipelineTopic").value;
+            if (topicName === "__manual__") {
+                topicName = document.getElementById("pipelineTopicManual").value.trim();
+            }
+            const skipExtraction = document.getElementById("skipExtraction").checked;
+
+            if (!wsId) {
+                showToast("⚠️ Worksheet ID is required.", "#E65100");
+                return;
+            }
+            if (!topicName) {
+                showToast("⚠️ Topic Name is required.", "#E65100");
+                return;
+            }
+
+            startBtn.disabled = true;
+            document.getElementById("showReportBtn").disabled = true;
+            document.getElementById("verifyAnswersBtn").style.display = "none";
+
+            fetch("/api/start", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    topic_name: topicName,
+                    worksheet_id: wsId,
+                    skip_extraction: skipExtraction
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === "started") {
+                    showToast("✅ Pipeline started!", "#1565C0");
+                    lastLogCount = 0;
+                    document.getElementById("logContainer").innerHTML = "";
+                    document.getElementById("reportSection").style.display = "none";
+                    stopBtn.style.display  = "inline-flex";
+                    startBtn.style.display = "none";
+                    startPolling();
+                } else {
+                    showToast("⚠️ " + data.message, "#E65100");
+                    startBtn.disabled = false;
+                }
+            })
+            .catch(() => {
+                showToast("❌ Failed to connect to backend.", "#C62828");
+                startBtn.disabled = false;
+            });
+        }
+
+        function stopAnalysis() {
+            fetch("/api/stop", { method: "POST" })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === "stopping") {
+                        showToast("⏹️ Stop signal sent. Finishing current question...", "#E65100");
+                    } else {
+                        showToast("⚠️ " + data.message, "#E65100");
+                    }
+                })
+                .catch(() => { showToast("❌ Failed to send stop signal.", "#C62828"); });
+        }
+
+        function startPolling() {
+            if (pollingInterval) clearInterval(pollingInterval);
+            pollingInterval = setInterval(pollStatus, 800);
+            pollStatus();
+        }
+
+        function pollStatus() {
+            fetch("/api/status")
+                .then(res => res.json())
+                .then(state => {
+                    updateDashboard(state);
+                    const done = state.status === "Completed" || state.status === "Stopped";
+                    if (done) {
+                        clearInterval(pollingInterval);
+                        pollingInterval = null;
+                        document.getElementById("stopBtn").style.display  = "none";
+                        document.getElementById("startBtn").style.display = "inline-flex";
+                        document.getElementById("startBtn").disabled = false;
+                        if (state.status === "Completed") {
+                            showToast("✅ Pipeline completed!", "#2E7D32");
+                            document.getElementById("showReportBtn").disabled = false;
+                            document.getElementById("verifyAnswersBtn").style.display = "inline-flex";
+                            renderReportTable(state);
+                        } else {
+                            showToast("⏹️ Analysis stopped.", "#E65100");
+                        }
+                    } else if (state.status === "Waiting") {
+                        clearInterval(pollingInterval);
+                        pollingInterval = null;
+                        document.getElementById("stopBtn").style.display  = "none";
+                        document.getElementById("startBtn").style.display = "inline-flex";
+                        document.getElementById("startBtn").disabled = false;
+                    }
+                })
+                .catch(err => console.error("Polling failed:", err));
+        }
+
+        function updateDashboard(state) {
+            const statusEl = document.getElementById("statusText");
+            statusEl.className = "status-badge";
+            statusEl.innerText = state.status;
+            if      (state.status === "Processing") { statusEl.classList.add("status-processing"); document.getElementById("processingSpinner").style.display = "inline-block"; }
+            else if (state.status === "Completed")  { statusEl.classList.add("status-completed");  document.getElementById("processingSpinner").style.display = "none"; }
+            else if (state.status === "Stopped")    { statusEl.classList.add("status-stopped");    document.getElementById("processingSpinner").style.display = "none"; }
+            else                                     { statusEl.classList.add("status-waiting");    document.getElementById("processingSpinner").style.display = "none"; }
+
+            // Update numerical values
+            document.getElementById("totalWorksheets").innerText = state.total_worksheets;
+            document.getElementById("worksheetsCount").innerText = state.completed_worksheets;
+            document.getElementById("totalQuestions").innerText = state.total_questions;
+            document.getElementById("questionsCount").innerText = state.completed_questions;
+            
+            // Progress Bar and Percentages
+            const pct = Math.round(state.percent_complete) || 0;
+            document.getElementById("progressBar").style.width = pct + "%";
+            document.getElementById("percentageText").innerText = pct + "%";
+
+            // Sidebar details
+            document.getElementById("sidebarWorksheet").innerText = state.current_worksheet_id || "-";
+            document.getElementById("sidebarQuestion").innerText = state.current_question_number || "-";
+            document.getElementById("sidebarIssues").innerText = state.total_issues;
+            document.getElementById("sidebarPassed").innerText = state.total_passed;
+
+            // Pre-populate input if it is currently executing or completed
+            if (state.current_worksheet_id && !document.getElementById("pipelineWorksheetId").value) {
+                document.getElementById("pipelineWorksheetId").value = state.current_worksheet_id;
+                if (state.status === "Completed") {
+                    document.getElementById("verifyAnswersBtn").style.display = "inline-flex";
+                }
+            }
+
+            // Timer and execution details
+            document.getElementById("sidebarStart").innerText = state.start_time || "-";
+            document.getElementById("sidebarEnd").innerText = state.end_time || "-";
+            if (state.execution_time_seconds > 0) {
+                const minutes = Math.floor(state.execution_time_seconds / 60);
+                const seconds = Math.floor(state.execution_time_seconds % 60);
+                document.getElementById("sidebarElapsed").innerText = `${minutes}m ${seconds}s`;
+            } else {
+                document.getElementById("sidebarElapsed").innerText = "-";
+            }
+
+            // Stream new logs
+            if (state.logs.length > lastLogCount) {
+                const logContainer = document.getElementById("logContainer");
+                // Remove empty placeholder if present
+                const emptyEl = logContainer.querySelector('[style*="flex"]');
+                if (emptyEl && lastLogCount === 0) emptyEl.remove();
+
+                for (let i = lastLogCount; i < state.logs.length; i++) {
+                    const log = state.logs[i];
+                    const item = document.createElement("div");
+                    const isIssue = log.ai_response.includes("Issue:");
+                    item.className = "log-item " + (isIssue ? "log-issue" : "log-pass");
+
+                    const badgeClass = isIssue ? 'cell-badge-issue' : 'cell-badge-ok';
+                    const badgeText  = isIssue ? 'Issue Detected' : 'Passed Review';
+
+                    item.innerHTML = `
+                        <div class="log-meta">
+                            <span><strong class="log-badge">WS: ${escapeHtml(log.worksheet_id)}</strong>&nbsp; Q${log.question_number} — ${escapeHtml(log.screenshot_name)}</span>
+                            <span><span class="cell-badge ${badgeClass}">${badgeText}</span>&nbsp; ${log.timestamp}</span>
+                        </div>
+                        <div class="log-body">${escapeHtml(log.ai_response)}</div>
+                    `;
+                    logContainer.appendChild(item);
+                }
+
+                lastLogCount = state.logs.length;
+                logContainer.scrollTop = logContainer.scrollHeight;
+                if (window.MathJax && window.MathJax.typesetPromise) window.MathJax.typesetPromise();
+            }
+        }
+
+        function renderReportTable(state) {
+            const maxQ = Math.max(...state.logs.map(log => log.question_number), 0);
+            if (maxQ === 0) return;
+
+            // Show report section
+            const reportSection = document.getElementById("reportSection");
+            reportSection.style.display = "grid";
+
+            // Headers
+            const headerRow = document.getElementById("reportTableHeader");
+            headerRow.innerHTML = "<th>Worksheet ID</th>";
+            for (let i = 1; i <= maxQ; i++) {
+                headerRow.innerHTML += `<th>Q${i}</th>`;
+            }
+
+            // Body rows
+            const tableBody = document.getElementById("reportTableBody");
+            tableBody.innerHTML = "";
+
+            const worksheetIds = Object.keys(state.report).sort();
+            worksheetIds.forEach(wsId => {
+                const row = document.createElement("tr");
+                let rowHtml = `<td style="font-weight:700; color:var(--text-dark);">${escapeHtml(wsId)}</td>`;
+                
+                for (let q = 1; q <= maxQ; q++) {
+                    const cellVal = state.report[wsId]["Q" + q] || "";
+                    if (cellVal) {
+                        const isIssue = cellVal.includes("Issue:");
+                        const badgeClass = isIssue ? 'cell-badge-issue' : 'cell-badge-ok';
+                        const badgeText = isIssue ? 'Issue' : 'Passed';
+                        
+                        rowHtml += `
+                            <td>
+                                <div class="cell-badge ${badgeClass}">${badgeText}</div>
+                                <div class="cell-content" onclick="viewFullResponse('${escapeHtml(wsId)}', ${q}, \`${escapeJsString(cellVal)}\`)">
+                                    ${escapeHtml(cellVal)}
+                                </div>
+                            </td>
+                        `;
+                    } else {
+                        rowHtml += "<td><span style='color: var(--text-muted); font-size:11px;'>N/A</span></td>";
+                    }
+                }
+                row.innerHTML = rowHtml;
+                tableBody.appendChild(row);
+            });
+
+            // Trigger MathJax rendering on report
+            if (window.MathJax && window.MathJax.typesetPromise) {
+                window.MathJax.typesetPromise();
+            }
+        }
+
+        function viewFullResponse(wsId, qNum, responseText) {
+            document.getElementById("modalTitle").innerText = `Worksheet ${wsId} - Question ${qNum} Review`;
+            document.getElementById("modalBody").innerHTML = responseText;
+            document.getElementById("responseModal").style.display = "flex";
+
+            // Typeset equations in modal
+            if (window.MathJax && window.MathJax.typesetPromise) {
+                window.MathJax.typesetPromise();
+            }
+        }
+
+        function closeModal(event) {
+            document.getElementById("responseModal").style.display = "none";
+        }
+
+        function scrollToReport() {
+            const el = document.getElementById("reportSection");
+            if (el) {
+                el.style.display = "grid";
+                el.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        function escapeHtml(text) {
+            if (!text) return "";
+            return text.toString()
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function escapeJsString(str) {
+            if (!str) return "";
+            return str.replace(/\\/g, '\\\\')
+                      .replace(/`/g, '\\`')
+                      .replace(/\$/g, '\\$')
+                      .replace(/\n/g, '\\n')
+                      .replace(/\r/g, '\\r');
+        }
+
+        // Initialize status on load
+        window.addEventListener("DOMContentLoaded", () => {
+            pollStatus();
+        });
+    </script>
+</body>
+</html>
