@@ -736,6 +736,9 @@ class TopicWorksheetFinder:
     def _collect_cards(self, topic_el: WebElement) -> list[WebElement]:
         """
         Return all visible worksheet card elements inside *topic_el*.
+        Handles both 'Start' and 'Resume' state cards — the ID may appear
+        in parentheses in visible text (Start state) or only in the HTML
+        attributes/href (Resume state after the worksheet was already begun).
         """
         candidates = topic_el.find_elements(By.XPATH, ".//div | .//li | .//section")
         cards = []
@@ -748,12 +751,32 @@ class TopicWorksheetFinder:
                 text = el.text.strip()
                 if not text:
                     continue
+
+                # --- Primary: ID in parentheses in visible text (Start state) ---
                 match = re.search(r'\(([A-Za-z0-9_\-]+)\)', text)
-                if not match:
-                    continue
-                ws_id = match.group(1).strip()
-                if not self._looks_like_id(ws_id):
-                    continue
+                if match and self._looks_like_id(match.group(1).strip()):
+                    ws_id = match.group(1).strip()
+                else:
+                    # --- Fallback: ID in outerHTML attributes/href (Resume state) ---
+                    try:
+                        html = el.get_attribute("outerHTML") or ""
+                    except Exception:
+                        html = ""
+                    # Look for ID pattern in parentheses inside the raw HTML too
+                    html_match = re.search(r'\(([A-Za-z0-9_\-]{5,20})\)', html)
+                    if html_match and self._looks_like_id(html_match.group(1).strip()):
+                        ws_id = html_match.group(1).strip()
+                    else:
+                        # Last resort: any data attribute value that looks like an ID
+                        attr_match = re.search(
+                            r'(?:data-id|data-worksheet-id|data-lesson-id|data-activity-id|data-assignment-id)\s*=\s*["\']([A-Za-z0-9_\-]{5,20})["\']',
+                            html, re.IGNORECASE
+                        )
+                        if attr_match and self._looks_like_id(attr_match.group(1).strip()):
+                            ws_id = attr_match.group(1).strip()
+                        else:
+                            continue
+
                 # Collect descendants that could be buttons/actions (button, a, span, and child divs)
                 descendants = el.find_elements(By.TAG_NAME, "button") + el.find_elements(By.TAG_NAME, "a") + el.find_elements(By.TAG_NAME, "span")
                 child_divs = [d for d in el.find_elements(By.TAG_NAME, "div") if d != el]
