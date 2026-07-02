@@ -48,6 +48,11 @@ log = get_logger()
 
 # Candidate topic container selectors (tried in order)
 _TOPIC_SELECTORS = [
+    "nav a",
+    "nav div",
+    "[class*='sidebar'] a",
+    "[class*='sidebar'] div",
+    "[class*='sidebar']",
     "[class*='topic']",
     "[class*='subject']",
     "[class*='chapter']",
@@ -329,6 +334,14 @@ class TopicWorksheetFinder:
         target_exact  = topic_name.strip()
         target_lower  = target_exact.lower()
 
+        # Wait up to 5 seconds for at least one sidebar item to be present in DOM
+        try:
+            WebDriverWait(self.driver, 5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "[class*='sidebar']"))
+            )
+        except Exception:
+            pass
+
         exact_matches    = []
         contains_matches = []
 
@@ -569,11 +582,15 @@ class TopicWorksheetFinder:
         except Exception:
             title = ""
             
-        # Clean title to only keep the first line (usually the main title)
-        if "\n" in title:
-            first_line = title.split("\n")[0].strip()
+        # Clean title: if the first line is the ID, use the second line as the title
+        lines = [l.strip() for l in title.split("\n") if l.strip()]
+        if lines:
+            if self._looks_like_id(lines[0]) and len(lines) > 1:
+                first_line = lines[1]
+            else:
+                first_line = lines[0]
         else:
-            first_line = title
+            first_line = ""
 
         # 2. Extract card HTML
         try:
@@ -757,25 +774,35 @@ class TopicWorksheetFinder:
                 if match and self._looks_like_id(match.group(1).strip()):
                     ws_id = match.group(1).strip()
                 else:
-                    # --- Fallback: ID in outerHTML attributes/href (Resume state) ---
-                    try:
-                        html = el.get_attribute("outerHTML") or ""
-                    except Exception:
-                        html = ""
-                    # Look for ID pattern in parentheses inside the raw HTML too
-                    html_match = re.search(r'\(([A-Za-z0-9_\-]{5,20})\)', html)
-                    if html_match and self._looks_like_id(html_match.group(1).strip()):
-                        ws_id = html_match.group(1).strip()
+                    # --- Secondary: Alphanumeric uppercase word pattern in text (e.g. NP6101, AQCMXAL209) ---
+                    words = re.findall(r'\b([A-Z0-9]{4,25})\b', text)
+                    found_word_id = None
+                    for word in words:
+                        if any(c.isalpha() for c in word) and any(c.isdigit() for c in word):
+                            found_word_id = word
+                            break
+                    if found_word_id and self._looks_like_id(found_word_id):
+                        ws_id = found_word_id
                     else:
-                        # Last resort: any data attribute value that looks like an ID
-                        attr_match = re.search(
-                            r'(?:data-id|data-worksheet-id|data-lesson-id|data-activity-id|data-assignment-id)\s*=\s*["\']([A-Za-z0-9_\-]{5,20})["\']',
-                            html, re.IGNORECASE
-                        )
-                        if attr_match and self._looks_like_id(attr_match.group(1).strip()):
-                            ws_id = attr_match.group(1).strip()
+                        # --- Fallback: ID in outerHTML attributes/href (Resume state) ---
+                        try:
+                            html = el.get_attribute("outerHTML") or ""
+                        except Exception:
+                            html = ""
+                        # Look for ID pattern in parentheses inside the raw HTML too
+                        html_match = re.search(r'\(([A-Za-z0-9_\-]{5,20})\)', html)
+                        if html_match and self._looks_like_id(html_match.group(1).strip()):
+                            ws_id = html_match.group(1).strip()
                         else:
-                            continue
+                            # Last resort: any data attribute value that looks like an ID
+                            attr_match = re.search(
+                                r'(?:data-id|data-worksheet-id|data-lesson-id|data-activity-id|data-assignment-id)\s*=\s*["\']([A-Za-z0-9_\-]{5,20})["\']',
+                                html, re.IGNORECASE
+                            )
+                            if attr_match and self._looks_like_id(attr_match.group(1).strip()):
+                                ws_id = attr_match.group(1).strip()
+                            else:
+                                continue
 
                 # Collect descendants that could be buttons/actions (button, a, span, and child divs)
                 descendants = el.find_elements(By.TAG_NAME, "button") + el.find_elements(By.TAG_NAME, "a") + el.find_elements(By.TAG_NAME, "span")
@@ -799,7 +826,7 @@ class TopicWorksheetFinder:
                     if child == el:
                         continue
                     child_text = child.text.strip()
-                    if f"({ws_id})" in child_text:
+                    if f"({ws_id})" in child_text or ws_id == child_text:
                         child_descendants = child.find_elements(By.TAG_NAME, "button") + child.find_elements(By.TAG_NAME, "a") + child.find_elements(By.TAG_NAME, "span")
                         child_divs = [d for d in child.find_elements(By.TAG_NAME, "div") if d != child]
                         child_descendants += child_divs

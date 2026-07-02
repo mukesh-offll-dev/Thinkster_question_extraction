@@ -551,3 +551,41 @@ def hold_browser(driver: WebDriver) -> None:
     except KeyboardInterrupt:
         log.info("User quit.")
 
+
+def is_sidebar_element(driver: WebDriver, element: WebElement) -> bool:
+    """
+    Check if the given element is part of a sidebar menu.
+    Checks class attributes, position, and walks ancestors.
+    """
+    try:
+        # 1. Check classes of the element itself
+        classes = (element.get_attribute("class") or "").lower()
+        if "sidebar" in classes:
+            return True
+
+        # 2. Check position of the element (sidebar typically on the left side)
+        loc = element.location
+        if loc and loc.get('x', 999) < 250:
+            return True
+
+        # 3. Walk up ancestors to find sidebar markers (e.g. tag 'nav', tag 'aside', classes)
+        curr = element
+        while curr:
+            try:
+                classes = (curr.get_attribute("class") or "").lower()
+                tag = curr.tag_name.lower()
+                if "sidebar" in classes or tag in ("aside", "nav") or "menu" in classes or "nav" in classes:
+                    return True
+                # Traverse up using Selenium By.XPATH to avoid JavaScript parentElement null issues
+                curr = curr.find_element(By.XPATH, "..")
+            except NoSuchElementException:
+                break
+            except StaleElementReferenceException:
+                break
+            except Exception:
+                break
+    except Exception:
+        pass
+    return False
+
+

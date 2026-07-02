@@ -32,6 +32,7 @@ from utils import (
     hold_browser,
     scroll_into_view,
     safe_click,
+    is_sidebar_element,
 )
 from topic_worksheet_finder import TopicWorksheetFinder
 from answering import answer_worksheet_questions
@@ -164,23 +165,7 @@ def run_automation() -> None:
         print(f"\nTopic Selected: {topic_name}\n")
         
         # Check if the topic element is part of a sidebar menu
-        is_sidebar = False
-        try:
-            loc = topic_el.location
-            if loc and loc.get('x', 999) < 250:
-                is_sidebar = True
-            
-            if not is_sidebar:
-                curr = topic_el
-                while curr:
-                    classes = (curr.get_attribute("class") or "").lower()
-                    tag = curr.tag_name.lower()
-                    if "sidebar" in classes or tag in ("aside", "nav") or "menu" in classes or "nav" in classes:
-                        is_sidebar = True
-                        break
-                    curr = driver.execute_script("return arguments[0].parentElement;", curr)
-        except Exception:
-            pass
+        is_sidebar = is_sidebar_element(driver, topic_el)
 
         if is_sidebar:
             log.info("Topic is sidebar menu item. Clicking to navigate...")
@@ -509,23 +494,8 @@ def run_answering_for_worksheet(topic_name: str, target_ws_id: str, headless: bo
 
         log_msg(f"Topic Selected: {topic_name}")
         
-        is_sidebar = False
-        try:
-            loc = topic_el.location
-            if loc and loc.get('x', 999) < 250:
-                is_sidebar = True
-            
-            if not is_sidebar:
-                curr = topic_el
-                while curr:
-                    classes = (curr.get_attribute("class") or "").lower()
-                    tag = curr.tag_name.lower()
-                    if "sidebar" in classes or tag in ("aside", "nav") or "menu" in classes or "nav" in classes:
-                        is_sidebar = True
-                        break
-                    curr = driver.execute_script("return arguments[0].parentElement;", curr)
-        except Exception:
-            pass
+        # Check if the topic element is part of a sidebar menu
+        is_sidebar = is_sidebar_element(driver, topic_el)
 
         if is_sidebar:
             log_msg("Topic is sidebar menu item. Clicking to navigate...")
