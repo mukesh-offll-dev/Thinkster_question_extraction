@@ -13,6 +13,7 @@
             --primary-dark:   #111827;
             --primary-soft:   #F3F4F6;
             --accent:         #374151;
+            --accent-indigo:  #4F46E5;
             --success:        #10B981;
             --success-light:  #D1FAE5;
             --danger:         #EF4444;
@@ -133,6 +134,37 @@
             padding: 32px 40px; display: flex; flex-direction: column; gap: 24px; flex-grow: 1;
         }
 
+        /* TABS HEADER */
+        .tabs-header {
+            display: flex;
+            gap: 8px;
+            border-bottom: 2px solid var(--border);
+            margin-bottom: 4px;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            padding: 12px 24px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            color: var(--text-muted);
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s ease;
+            position: relative;
+            bottom: -2px;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-dark);
+        }
+
+        .tab-btn.active {
+            color: var(--accent-indigo);
+            border-bottom-color: var(--accent-indigo);
+        }
+
         /* BATCH CARD */
         .excel-exporter-card {
             padding: 22px 26px;
@@ -190,7 +222,7 @@
 
         /* WORKSHEET CARDS */
         .worksheets-grid {
-            display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px;
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px;
         }
 
         .worksheet-card {
@@ -229,6 +261,7 @@
             display: flex; justify-content: space-between; font-size: 13px;
             border-top: 1px solid var(--border-light); padding-top: 12px;
             color: var(--text-muted);
+            align-items: center;
         }
 
         .worksheet-stats span { display: flex; align-items: center; gap: 4px; }
@@ -265,6 +298,7 @@
                 Thinkster Math - Automation Testing
                 <span>Reports Portal</span>
             </h1>
+        </div>
         <div class="control-panel">
             <a href="/answering" class="btn btn-secondary">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -286,11 +320,17 @@
     </header>
 
     <div class="main-container">
+        <!-- Tabs Header -->
+        <div class="tabs-header">
+            <button id="tabAnalysis" class="tab-btn active" onclick="switchTab('analysis')">AI Analysis Reports</button>
+            <button id="tabAnswering" class="tab-btn" onclick="switchTab('answering')">Automation Answering Reports</button>
+        </div>
+
         <!-- Batch Operations Card -->
         <div class="excel-exporter-card glass-card">
             <div class="exporter-left">
-                <h2>Batch Operations</h2>
-                <p>Select worksheets to export a combined PDF report with MathJax math rendering, or delete reviews from the database.</p>
+                <h2 id="batchCardTitle">Batch Operations</h2>
+                <p id="batchCardDesc">Select worksheets to export a combined PDF report with MathJax math rendering, or delete reviews from the database.</p>
             </div>
             <div class="exporter-right">
                 <span style="font-size: 13px; color: var(--text-muted); margin-right: 4px;">
@@ -332,7 +372,7 @@
 
         <!-- Worksheet Cards Grid -->
         <div id="worksheetsList" class="worksheets-grid">
-            <div class="no-results">Loading analyzed worksheets...</div>
+            <div class="no-results">Loading reports...</div>
         </div>
     </div>
 
@@ -340,6 +380,8 @@
 
     <script>
         let worksheetsData = [];
+        let answeringData = [];
+        let activeTab = 'analysis';
 
         function showToast(message, duration = 3500) {
             const toast = document.getElementById("toastNotification");
@@ -348,20 +390,66 @@
             setTimeout(() => { toast.classList.remove("show"); }, duration);
         }
 
-        function loadWorksheets() {
+        function switchTab(tab) {
+            activeTab = tab;
+            document.getElementById("tabAnalysis").classList.toggle("active", tab === 'analysis');
+            document.getElementById("tabAnswering").classList.toggle("active", tab === 'answering');
+            document.getElementById("searchInput").value = "";
+            document.getElementById("selectAllCheck").checked = false;
+            
+            const batchExport = document.getElementById("batchExportBtn");
+            const batchCardTitle = document.getElementById("batchCardTitle");
+            const batchCardDesc = document.getElementById("batchCardDesc");
+            
+            if (tab === 'answering') {
+                batchExport.style.display = "none";
+                batchCardTitle.innerText = "Batch Deletion";
+                batchCardDesc.innerText = "Select automated answering reports to delete them from the database.";
+                renderAnsweringReports(answeringData);
+            } else {
+                batchExport.style.display = "inline-flex";
+                batchCardTitle.innerText = "Batch Operations";
+                batchCardDesc.innerText = "Select worksheets to export a combined PDF report with MathJax math rendering, or delete reviews from the database.";
+                renderWorksheets(worksheetsData);
+            }
+            updateSelection();
+        }
+
+        function loadReports() {
+            // Load Analysis reports
             fetch("/api/db/worksheets")
                 .then(res => res.json())
                 .then(data => {
                     worksheetsData = data;
-                    renderWorksheets(worksheetsData);
-                    document.getElementById("selectAllCheck").checked = false;
-                    updateSelection();
+                    if (activeTab === 'analysis') {
+                        renderWorksheets(worksheetsData);
+                    }
                 })
                 .catch(err => {
-                    document.getElementById("worksheetsList").innerHTML = `
-                        <div class="no-results" style="color: var(--danger);">
-                            Failed to connect to database. Please make sure the server is running.
-                        </div>`;
+                    if (activeTab === 'analysis') {
+                        document.getElementById("worksheetsList").innerHTML = `
+                            <div class="no-results" style="color: var(--danger);">
+                                Failed to load analysis reports. Ensure MongoDB is connected.
+                            </div>`;
+                    }
+                });
+
+            // Load Answering reports
+            fetch("/api/db/answering_reports")
+                .then(res => res.json())
+                .then(data => {
+                    answeringData = data;
+                    if (activeTab === 'answering') {
+                        renderAnsweringReports(answeringData);
+                    }
+                })
+                .catch(err => {
+                    if (activeTab === 'answering') {
+                        document.getElementById("worksheetsList").innerHTML = `
+                            <div class="no-results" style="color: var(--danger);">
+                                Failed to load answering reports. Ensure MongoDB is connected.
+                            </div>`;
+                    }
                 });
         }
 
@@ -386,7 +474,7 @@
                             <button class="delete-icon-btn" onclick="deleteSingleWorksheet(event,'${escapeHtml(ws.worksheet_id)}')" title="Delete">
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                                     <polyline points="3 6 5 6 21 6"></polyline>
-                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2 2v2"></path>
                                 </svg>
                             </button>
                             <svg class="arrow-icon" onclick="navigateToDetail('${escapeHtml(ws.worksheet_id)}')" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
@@ -404,12 +492,71 @@
             });
         }
 
+        function renderAnsweringReports(list) {
+            const container = document.getElementById("worksheetsList");
+            if (list.length === 0) {
+                container.innerHTML = `<div class="no-results">No answering automation reports found.</div>`;
+                return;
+            }
+
+            container.innerHTML = "";
+            list.forEach(ws => {
+                const card = document.createElement("div");
+                card.className = "worksheet-card glass-card";
+                
+                const totalFail = (ws.incorrect_count || 0) + (ws.partially_correct_count || 0);
+                const statusBadge = totalFail > 0 
+                    ? `<span class="badge-issues">&#9888; ${totalFail} Discrepancies</span>`
+                    : `<span class="badge-passed">&#10003; All Correct</span>`;
+
+                card.innerHTML = `
+                    <div class="worksheet-card-header">
+                        <div style="display:flex;align-items:center;gap:12px;">
+                            <input type="checkbox" class="ws-checkbox" value="${ws.worksheet_id}" onchange="updateSelection()" onclick="event.stopPropagation()">
+                            <span class="worksheet-id-title" onclick="navigateToAnsweringDetail('${escapeHtml(ws.worksheet_id)}')">${escapeHtml(ws.worksheet_id)}</span>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <button class="delete-icon-btn" onclick="deleteSingleWorksheet(event,'${escapeHtml(ws.worksheet_id)}')" title="Delete">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                            </button>
+                            <svg class="arrow-icon" onclick="navigateToAnsweringDetail('${escapeHtml(ws.worksheet_id)}')" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                                <polyline points="12 5 19 12 12 19"></polyline>
+                            </svg>
+                        </div>
+                    </div>
+                    <div style="font-size:12px; color:var(--text-muted); margin-bottom: 4px; padding-left: 29px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                        Topic: <strong style="color:var(--text-dark);">${escapeHtml(ws.topic_name)}</strong>
+                    </div>
+                    <div style="font-size:11px; color:var(--text-muted); margin-bottom: 8px; padding-left: 29px;">
+                        Run Date: <strong>${escapeHtml(ws.timestamp)}</strong>
+                    </div>
+                    <div class="worksheet-stats" onclick="navigateToAnsweringDetail('${escapeHtml(ws.worksheet_id)}')">
+                        ${statusBadge}
+                        <span>Passed: ${ws.correct_count}</span>
+                        <span>Q: ${ws.total_questions}</span>
+                    </div>`;
+                container.appendChild(card);
+            });
+        }
+
         function filterWorksheets() {
             const query = document.getElementById("searchInput").value.trim().toLowerCase();
-            renderWorksheets(worksheetsData.filter(ws => ws.worksheet_id.toLowerCase().includes(query)));
+            if (activeTab === 'analysis') {
+                renderWorksheets(worksheetsData.filter(ws => ws.worksheet_id.toLowerCase().includes(query)));
+            } else {
+                renderAnsweringReports(answeringData.filter(ws => 
+                    ws.worksheet_id.toLowerCase().includes(query) || 
+                    (ws.topic_name && ws.topic_name.toLowerCase().includes(query))
+                ));
+            }
         }
 
         function navigateToDetail(wsId) { window.location.href = `/reports/${encodeURIComponent(wsId)}`; }
+        function navigateToAnsweringDetail(wsId) { window.location.href = `/reports/answering/${encodeURIComponent(wsId)}`; }
 
         function toggleSelectAll() {
             const checked = document.getElementById("selectAllCheck").checked;
@@ -420,25 +567,37 @@
         function updateSelection() {
             const count = document.querySelectorAll(".ws-checkbox:checked").length;
             document.getElementById("selectedCount").innerText = count;
-            document.getElementById("batchExportBtn").disabled = count === 0;
+            
+            const batchExport = document.getElementById("batchExportBtn");
+            if (activeTab === 'analysis') {
+                batchExport.disabled = count === 0;
+            }
             document.getElementById("batchDeleteBtn").disabled = count === 0;
         }
 
         function deleteSingleWorksheet(event, wsId) {
             event.stopPropagation();
-            if (!confirm(`Delete analysis report for ${wsId}?`)) return;
+            const reportType = activeTab === 'analysis' ? 'analysis review' : 'answering automation report';
+            if (!confirm(`Delete ${reportType} for ${wsId}?`)) return;
             fetch("/api/db/delete", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({worksheet_ids:[wsId]}) })
                 .then(r => r.json())
-                .then(d => { showToast(d.status === "deleted" ? `Deleted ${wsId}.` : "Error: " + d.error); if (d.status === "deleted") loadWorksheets(); })
+                .then(d => { 
+                    showToast(d.status === "deleted" ? `Deleted report for ${wsId}.` : "Error: " + d.error); 
+                    if (d.status === "deleted") loadReports(); 
+                })
                 .catch(() => showToast("Connection error while deleting."));
         }
 
         function deleteSelectedWorksheets() {
             const ids = Array.from(document.querySelectorAll(".ws-checkbox:checked")).map(cb => cb.value);
-            if (!ids.length || !confirm(`Delete ${ids.length} selected reports?`)) return;
+            const reportType = activeTab === 'analysis' ? 'analysis reviews' : 'answering automation reports';
+            if (!ids.length || !confirm(`Delete ${ids.length} selected ${reportType}?`)) return;
             fetch("/api/db/delete", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({worksheet_ids:ids}) })
                 .then(r => r.json())
-                .then(d => { showToast(d.status === "deleted" ? `Deleted ${d.count} reports.` : "Error: " + d.error); if (d.status === "deleted") loadWorksheets(); })
+                .then(d => { 
+                    showToast(d.status === "deleted" ? `Deleted ${d.count} reports.` : "Error: " + d.error); 
+                    if (d.status === "deleted") loadReports(); 
+                })
                 .catch(() => showToast("Connection error."));
         }
 
@@ -449,13 +608,12 @@
             window.open(`/api/export/pdf/batch?ids=${encodeURIComponent(ids.join(","))}`, "_blank");
         }
 
-        // Escape helper
         function escapeHtml(text) {
             if (!text) return "";
             return text.toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
         }
 
-        window.addEventListener("DOMContentLoaded", loadWorksheets);
+        window.addEventListener("DOMContentLoaded", loadReports);
     </script>
 </body>
 </html>

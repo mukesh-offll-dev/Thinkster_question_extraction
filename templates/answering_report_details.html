@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Answering Automation Report - Thinkster Math Testing</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary:        #1F2937;
+            --primary-light:  #4B5563;
+            --primary-dark:   #111827;
+            --primary-soft:   #F3F4F6;
+            --accent:         #4F46E5;
+            --success:        #10B981;
+            --success-light:  #D1FAE5;
+            --danger:         #EF4444;
+            --danger-light:   #FEE2E2;
+            --warning:        #F59E0B;
+            --warning-light:  #FEF3C7;
+            --text-dark:      #111827;
+            --text-mid:       #374151;
+            --text-muted:     #6B7280;
+            --bg:             #F9FAFB;
+            --surface:        #FFFFFF;
+            --border:         #E5E7EB;
+            --border-light:   #F3F4F6;
+            --shadow-sm:      0 1px 3px rgba(0,0,0,0.05);
+            --shadow-md:      0 4px 6px rgba(0,0,0,0.05);
+            --shadow-lg:      0 10px 15px rgba(0,0,0,0.05);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text-dark);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        .glass-card, .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        /* HEADER */
+        header {
+            background: #FFFFFF;
+            border-bottom: 2px solid #E5E7EB;
+            padding: 0 40px;
+            height: 72px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo-section { display: flex; align-items: center; gap: 14px; }
+        .logo-img { height: 44px; width: auto; object-fit: contain; border-radius: 6px; }
+        .divider-v { width: 1px; height: 36px; background: #E5E7EB; }
+
+        .logo-section h1 {
+            font-size: 19px; font-weight: 800; color: #111827;
+            letter-spacing: -0.3px; line-height: 1.2;
+        }
+
+        .logo-section h1 span {
+            display: block; font-size: 10px; font-weight: 500; color: #6B7280;
+            letter-spacing: 1.5px; text-transform: uppercase; margin-top: 1px;
+        }
+
+        .control-panel { display: flex; gap: 10px; align-items: center; }
+
+        .btn {
+            font-family: inherit; font-weight: 600; font-size: 13px;
+            padding: 9px 18px; border-radius: 8px; border: 1.5px solid transparent;
+            cursor: pointer; transition: all 0.18s ease;
+            display: inline-flex; align-items: center; gap: 7px;
+            white-space: nowrap; text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--primary); color: #fff; border-color: var(--primary);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark); border-color: var(--primary-dark);
+            transform: translateY(-1px); box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+        }
+
+        .btn-secondary {
+            background: var(--surface); border-color: var(--border); color: var(--text-dark);
+        }
+
+        .btn-secondary:hover {
+            background: var(--primary-soft); border-color: var(--border);
+            color: var(--text-dark); transform: translateY(-1px);
+        }
+
+        /* MAIN CONTAINER */
+        .main-container {
+            max-width: 1100px; width: 100%; margin: 0 auto;
+            padding: 36px 40px; display: flex; flex-direction: column; gap: 28px; flex-grow: 1;
+        }
+
+        /* DETAIL HEADER */
+        .detail-header {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            border-bottom: 1px solid var(--border); padding-bottom: 22px;
+        }
+
+        .detail-title-block h2 {
+            font-size: 26px; font-weight: 800; color: var(--text-dark);
+            margin-bottom: 8px; letter-spacing: -0.3px;
+        }
+
+        .detail-meta-text {
+            font-size: 13px; color: var(--text-muted);
+            display: flex; flex-wrap: wrap; gap: 18px;
+        }
+
+        .detail-meta-text span strong { color: var(--text-dark); font-weight: 600; }
+
+        /* METRICS GRID */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 16px;
+        }
+
+        .metric-card {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .metric-card .lbl {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .metric-card .val {
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--text-dark);
+        }
+
+        /* TABLE VIEW */
+        table.reports-table {
+            width: 100%;
+            border-collapse: collapse;
+            overflow: hidden;
+            font-size: 14px;
+        }
+
+        table.reports-table th, table.reports-table td {
+            padding: 14px 18px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+        }
+
+        table.reports-table th {
+            background: var(--primary-soft);
+            font-weight: 700;
+            color: var(--text-dark);
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 12px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        .status-badge.correct { background: var(--success-light); color: var(--success); }
+        .status-badge.incorrect { background: var(--danger-light); color: var(--danger); }
+        .status-badge.partially_correct { background: var(--warning-light); color: var(--warning); }
+        .status-badge.skipped { background: var(--primary-soft); color: var(--text-muted); }
+
+        .btn-view-screenshot {
+            background: var(--accent);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .btn-view-screenshot:hover {
+            opacity: 0.9;
+        }
+
+        /* SCREENSHOT MODAL */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-content-wrapper {
+            position: relative;
+            max-width: 90%;
+            max-height: 85%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        .modal-close {
+            position: absolute;
+            top: -15px;
+            right: -15px;
+            color: white;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            background: #111827;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+
+        .modal-close:hover {
+            transform: scale(1.1);
+        }
+
+        .modal-img {
+            max-width: 100%;
+            max-height: 70vh;
+            object-fit: contain;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+        }
+
+        .modal-caption {
+            margin-top: 14px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo-section">
+            <img src="/logo" alt="Thinkster Math Logo" class="logo-img" onerror="this.style.display='none'">
+            <div class="divider-v"></div>
+            <h1>
+                Thinkster Math - Automation Testing
+                <span>Answering Report Detail</span>
+            </h1>
+        </div>
+        <div class="control-panel">
+            <a href="/reports" class="btn btn-secondary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+                Back to Reports
+            </a>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <!-- Report Meta Header -->
+        <div class="detail-header">
+            <div class="detail-title-block">
+                <h2>Worksheet Answering Run: <span id="wsIdTitle">-</span></h2>
+                <div class="detail-meta-text">
+                    <span>Topic: <strong id="topicName">-</strong></span>
+                    <span>Execution Run Date: <strong id="runDate">-</strong></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Metrics Cards -->
+        <div class="metrics-grid">
+            <div class="card metric-card">
+                <span class="lbl">Total Questions</span>
+                <span id="metricTotal" class="val">-</span>
+            </div>
+            <div class="card metric-card" style="border-left: 4px solid var(--success);">
+                <span class="lbl">Correct</span>
+                <span id="metricCorrect" class="val" style="color: var(--success);">-</span>
+            </div>
+            <div class="card metric-card" style="border-left: 4px solid var(--danger);">
+                <span class="lbl">Incorrect</span>
+                <span id="metricIncorrect" class="val" style="color: var(--danger);">-</span>
+            </div>
+            <div class="card metric-card" style="border-left: 4px solid var(--warning);">
+                <span class="lbl">Partially Correct</span>
+                <span id="metricPartial" class="val" style="color: var(--warning);">-</span>
+            </div>
+            <div class="card metric-card">
+                <span class="lbl">Skipped</span>
+                <span id="metricSkipped" class="val">-</span>
+            </div>
+        </div>
+
+        <!-- Detailed Breakdown Card -->
+        <div class="card" style="overflow: hidden;">
+            <table class="reports-table">
+                <thead>
+                    <tr>
+                        <th>Q#</th>
+                        <th>Submitted Answer</th>
+                        <th>Website Correct Answer</th>
+                        <th>Status</th>
+                        <th>Graded Screenshot</th>
+                    </tr>
+                </thead>
+                <tbody id="questionsTableBody">
+                    <tr>
+                        <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 40px;">
+                            Loading question run details...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Image Lightbox Modal -->
+    <div id="imageModal" class="modal" onclick="closeModal()">
+        <div class="modal-content-wrapper" onclick="event.stopPropagation()">
+            <span class="modal-close" onclick="closeModal()">&times;</span>
+            <img id="modalImg" class="modal-img" src="" alt="Graded Screenshot">
+            <div id="modalCaption" class="modal-caption"></div>
+        </div>
+    </div>
+
+    <script>
+        const worksheetId = "{{ worksheet_id }}";
+
+        function loadAnsweringReportDetails() {
+            fetch(`/api/db/answering_report/${encodeURIComponent(worksheetId)}`)
+                .then(res => {
+                    if (!res.ok) throw new Error("Report not found");
+                    return res.json();
+                })
+                .then(data => renderDetails(data))
+                .catch(() => {
+                    document.getElementById("questionsTableBody").innerHTML = `
+                        <tr>
+                            <td colspan="5" style="text-align:center;color:var(--danger);padding:40px;font-weight:500;">
+                                Failed to load answering report detail. Ensure MongoDB is connected and the report exists.
+                            </td>
+                        </tr>`;
+                });
+        }
+
+        function renderDetails(data) {
+            document.getElementById("wsIdTitle").innerText = data.worksheet_id || "-";
+            document.getElementById("topicName").innerText = data.topic_name || "-";
+            document.getElementById("runDate").innerText = data.timestamp || "-";
+
+            document.getElementById("metricTotal").innerText = data.total_questions ?? 0;
+            document.getElementById("metricCorrect").innerText = data.correct_count ?? 0;
+            document.getElementById("metricIncorrect").innerText = data.incorrect_count ?? 0;
+            document.getElementById("metricPartial").innerText = data.partially_correct_count ?? 0;
+            document.getElementById("metricSkipped").innerText = data.skipped_count ?? 0;
+
+            const tbody = document.getElementById("questionsTableBody");
+            if (!data.questions || data.questions.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" style="text-align:center;color:var(--text-muted);padding:40px;">
+                            No questions found in this run report.
+                        </td>
+                    </tr>`;
+                return;
+            }
+
+            // Sort questions in order
+            data.questions.sort((a, b) => a.question_number - b.question_number);
+
+            tbody.innerHTML = "";
+            data.questions.forEach(q => {
+                const tr = document.createElement("tr");
+                
+                // Format submitted answers (lists or text)
+                let subAnsStr = "-";
+                if (q.submitted_answer !== null && q.submitted_answer !== undefined) {
+                    if (Array.isArray(q.submitted_answer)) {
+                        subAnsStr = q.submitted_answer.join(", ");
+                    } else {
+                        subAnsStr = q.submitted_answer.toString();
+                    }
+                }
+                
+                // Website expected answer
+                const webAnsStr = q.website_correct_answer ? q.website_correct_answer.toString() : "-";
+                
+                // Badges mapping
+                let badgeClass = "skipped";
+                let badgeText = q.status || "skipped";
+                if (q.status === "correct") {
+                    badgeClass = "correct";
+                    badgeText = "✅ Correct";
+                } else if (q.status === "incorrect") {
+                    badgeClass = "incorrect";
+                    badgeText = "❌ Incorrect";
+                } else if (q.status === "partially_correct") {
+                    badgeClass = "partially_correct";
+                    badgeText = "⚠️ Partial";
+                } else if (q.status === "skipped") {
+                    badgeClass = "skipped";
+                    badgeText = "⏭️ Skipped";
+                }
+
+                // Screenshot link
+                let screenshotCell = "-";
+                if (q.screenshot_name) {
+                    const screenshotUrl = `/screenshots/${encodeURIComponent(data.worksheet_id)}/${encodeURIComponent(q.screenshot_name)}`;
+                    screenshotCell = `
+                        <button class="btn-view-screenshot" onclick="openModal('${screenshotUrl}', 'Question ${q.question_number} Graded Result')">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+                            </svg>
+                            View Screenshot
+                        </button>`;
+                }
+
+                tr.innerHTML = `
+                    <td style="font-weight:600;">Question ${q.question_number}</td>
+                    <td><code>${escapeHtml(subAnsStr)}</code></td>
+                    <td><code>${escapeHtml(webAnsStr)}</code></td>
+                    <td><span class="status-badge ${badgeClass}">${badgeText}</span></td>
+                    <td>${screenshotCell}</td>`;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function openModal(imgUrl, captionText) {
+            const modal = document.getElementById("imageModal");
+            const modalImg = document.getElementById("modalImg");
+            const modalCaption = document.getElementById("modalCaption");
+            
+            modal.style.display = "flex";
+            modalImg.src = imgUrl;
+            modalCaption.innerText = captionText;
+        }
+
+        function closeModal() {
+            document.getElementById("imageModal").style.display = "none";
+        }
+
+        function escapeHtml(text) {
+            if (!text) return "";
+            return text.toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
+        }
+
+        window.addEventListener("DOMContentLoaded", loadAnsweringReportDetails);
+    </script>
+</body>
+</html>

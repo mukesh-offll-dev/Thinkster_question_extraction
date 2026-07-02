@@ -503,15 +503,18 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
         log.info("Question %d result: %s", q_no, correctness.upper())
         print(f"-> Question {q_no} is: {correctness.upper()}")
         
-        # Save screenshot
-        screenshot_dir = os.path.join("screenshots", worksheet_id)
-        os.makedirs(screenshot_dir, exist_ok=True)
-        screenshot_path = os.path.join(screenshot_dir, f"Question_{q_no}_graded.png")
-        try:
-            driver.save_screenshot(screenshot_path)
-            log.info("Saved graded screenshot: %s", screenshot_path)
-        except Exception as e:
-            log.error("Failed to save graded screenshot: %s", e)
+        # Save screenshot only if answer is incorrect / partially correct
+        screenshot_path = None
+        if correctness != "correct":
+            screenshot_dir = os.path.join("screenshots", worksheet_id)
+            os.makedirs(screenshot_dir, exist_ok=True)
+            screenshot_path = os.path.join(screenshot_dir, f"Question_{q_no}_graded.png")
+            try:
+                driver.save_screenshot(screenshot_path)
+                log.info("Saved graded screenshot: %s", screenshot_path)
+            except Exception as e:
+                log.error("Failed to save graded screenshot: %s", e)
+                screenshot_path = None
             
         # Try to extract the website's correct answer if it's not correct
         website_correct_answer = None

@@ -99,6 +99,72 @@ def load_answers_from_db(worksheet_id: str) -> Optional[dict]:
         return None
 
 
+def save_answering_report_to_db(worksheet_id: str, topic_name: str, results: dict) -> None:
+    """
+    Saves the automated answering and grading results for a worksheet to MongoDB.
+    """
+    try:
+        from pymongo import MongoClient
+        from datetime import datetime
+        client = MongoClient(config.MONGO_URI, serverSelectionTimeoutMS=5000)
+        db = client[config.MONGO_DB]
+        answering_report_coll = db["Answering_Report"]
+        
+        # Calculate summary statistics
+        total_q = len(results)
+        correct_q = 0
+        incorrect_q = 0
+        partially_correct_q = 0
+        skipped_q = 0
+        
+        questions_list = []
+        for q_no, q_data in results.items():
+            status = q_data.get("status", "unknown")
+            if status == "correct":
+                correct_q += 1
+            elif status == "incorrect":
+                incorrect_q += 1
+            elif status == "partially_correct":
+                partially_correct_q += 1
+            elif status == "skipped":
+                skipped_q += 1
+                
+            screenshot_path = q_data.get("screenshot_path")
+            screenshot_name = os.path.basename(screenshot_path) if screenshot_path else None
+            
+            questions_list.append({
+                "question_number": int(q_no),
+                "submitted_answer": q_data.get("submitted_answer"),
+                "website_correct_answer": q_data.get("website_correct_answer"),
+                "status": status,
+                "screenshot_name": screenshot_name
+            })
+            
+        doc = {
+            "worksheet_id": worksheet_id,
+            "topic_name": topic_name,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "total_questions": total_q,
+            "correct_count": correct_q,
+            "incorrect_count": incorrect_q,
+            "partially_correct_count": partially_correct_q,
+            "skipped_count": skipped_q,
+            "questions": questions_list,
+            "created_at": datetime.now()
+        }
+        
+        # Upsert report by worksheet_id
+        answering_report_coll.update_one(
+            {"worksheet_id": worksheet_id},
+            {"$set": doc},
+            upsert=True
+        )
+        log.info("Successfully saved answering report to MongoDB for worksheet: %s", worksheet_id)
+    except Exception as e:
+        log.error("Failed to save answering report to MongoDB for %s: %s", worksheet_id, e)
+        print(f"[WARN] Failed to save answering report to MongoDB: {e}")
+
+
 def run_automation() -> None:
     # Get topic from user
     topic_name = prompt_topic_name()
@@ -278,6 +344,7 @@ def run_automation() -> None:
             print(f"Opened worksheet {ws_id} successfully. Answering questions...")
             ws_results = answer_worksheet_questions(driver, ws_id, answers)
             worksheet_results[ws_id] = { "title": ws_title, "questions": ws_results }
+            save_answering_report_to_db(ws_id, topic_name, ws_results)
             
             # Exit worksheet and return to worksheet list
             exit_success = exit_worksheet(driver)
@@ -576,6 +643,7 @@ def run_answering_for_worksheet(topic_name: str, target_ws_id: str, headless: bo
             
         log_msg("Opened worksheet successfully. Answering questions...")
         ws_results = answer_worksheet_questions(driver, target_ws_id, answers)
+        save_answering_report_to_db(target_ws_id, topic_name, ws_results)
         
         exit_success = exit_worksheet(driver)
         if not exit_success:

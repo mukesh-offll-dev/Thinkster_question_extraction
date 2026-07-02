@@ -748,6 +748,10 @@ def answering_page():
 def worksheet_details(worksheet_id):
     return render_template("worksheet_details.html", worksheet_id=worksheet_id)
 
+@app.route("/reports/answering/<worksheet_id>")
+def answering_worksheet_details(worksheet_id):
+    return render_template("answering_report_details.html", worksheet_id=worksheet_id)
+
 @app.route("/check/<worksheet_id>")
 def check_worksheet(worksheet_id):
     return render_template("check.html", worksheet_id=worksheet_id)
@@ -933,6 +937,41 @@ def get_db_worksheet_details(worksheet_id):
         for d in docs:
             d["_id"] = str(d["_id"])
         return jsonify(docs)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/db/answering_reports", methods=["GET"])
+def get_db_answering_reports():
+    try:
+        answering_report_coll = db["Answering_Report"]
+        results = list(answering_report_coll.find({}, {
+            "_id": 0,
+            "worksheet_id": 1,
+            "topic_name": 1,
+            "timestamp": 1,
+            "total_questions": 1,
+            "correct_count": 1,
+            "incorrect_count": 1,
+            "partially_correct_count": 1,
+            "skipped_count": 1
+        }))
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/db/answering_report/<worksheet_id>", methods=["GET"])
+def get_db_answering_report_details(worksheet_id):
+    try:
+        answering_report_coll = db["Answering_Report"]
+        doc = answering_report_coll.find_one({"worksheet_id": worksheet_id})
+        if not doc:
+            return jsonify({"error": f"No answering report found for worksheet {worksheet_id}."}), 404
+        doc["_id"] = str(doc["_id"])
+        if "created_at" in doc and isinstance(doc["created_at"], datetime):
+            doc["created_at"] = doc["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+        return jsonify(doc)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1330,6 +1369,13 @@ def delete_worksheets():
             ws_answers_coll.delete_many({"worksheetID": {"$in": worksheet_ids}})
         except Exception as db_err:
             print(f"Failed to delete from WS_answers: {db_err}")
+            
+        # Also delete from Answering_Report
+        try:
+            answering_report_coll = db["Answering_Report"]
+            answering_report_coll.delete_many({"worksheet_id": {"$in": worksheet_ids}})
+        except Exception as db_err:
+            print(f"Failed to delete from Answering_Report: {db_err}")
             
         return jsonify({"status": "deleted", "count": res.deleted_count})
     except Exception as e:
