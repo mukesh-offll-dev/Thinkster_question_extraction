@@ -433,12 +433,13 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
             time.sleep(1.5)
             
         q_answer = answers.get(str(q_no))
-        if q_answer is None:
-            log.warning("No answer provided for Question %d. Skipping input.", q_no)
-            print(f"-> Warning: No answer found in JSON for Question {q_no}.")
+        if q_answer is None or (isinstance(q_answer, str) and q_answer.strip().lower() == "issue"):
+            reason = "No answer provided" if q_answer is None else "Answer is marked as 'Issue'"
+            log.warning("%s for Question %d. Skipping input.", reason, q_no)
+            print(f"-> Warning: {reason} for Question {q_no}. Skipping.")
             results[q_no] = {
                 "status": "skipped",
-                "submitted_answer": None,
+                "submitted_answer": q_answer if q_answer else None,
                 "screenshot_path": None,
                 "website_correct_answer": None
             }

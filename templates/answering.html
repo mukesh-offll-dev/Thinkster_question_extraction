@@ -225,7 +225,7 @@
                     <span id="statusPill" class="status-pill idle">Idle</span>
                 </div>
                 <div class="card-body">
-                    <div class="form-grid">
+                    <div class="form-grid" style="grid-template-columns: 1fr;">
                         <div class="form-group">
                             <label for="topicSelect">Topic Name</label>
                             <select id="topicSelect" onchange="toggleManual()">
@@ -242,10 +242,12 @@
                             </select>
                             <input id="topicManual" type="text" placeholder="Type topic name…" style="display:none; margin-top:8px;">
                         </div>
-                        <div class="form-group">
-                            <label for="worksheetId">Worksheet ID</label>
-                            <input id="worksheetId" type="text" placeholder="e.g. AQFFNAL210">
-                        </div>
+                    </div>
+                    <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 15px;">
+                        <button id="fetchWorksheetsBtn" class="btn btn-secondary" onclick="fetchWorksheetsForTopic()">
+                            <span id="fetchBtnSpinner" class="spinner" style="display: none; margin-right: 6px; width: 12px; height: 12px; border-width: 2px;"></span>
+                            Fetch Worksheets for Topic
+                        </button>
                     </div>
 
                     <div class="toggle-row" style="margin-top: 16px;">
@@ -265,6 +267,28 @@
                     </button>
                     <div style="flex:1;"></div>
                     <a href="/reports" class="btn btn-secondary">View Reports</a>
+                </div>
+            </div>
+
+            <!-- Worksheets Checklist Card (Hidden by default) -->
+            <div id="worksheetsChecklistCard" class="card" style="display: none; flex-direction: column; gap: 18px; margin-top: 0px; padding: 20px 24px; margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 5px;">
+                    <h2 style="font-size: 14px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.6px; margin: 0;">Select Worksheets for Answering</h2>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 15px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="selectAllWorksheets" onchange="toggleSelectAllWorksheets(this)" style="cursor: pointer; width: 16px; height: 16px;" />
+                        <label for="selectAllWorksheets" style="font-size: 13px; font-weight: 600; color: var(--text-mid); cursor: pointer; user-select: none;">Select All Worksheets</label>
+                    </div>
+                    <div style="position: relative; width: 100%; max-width: 250px;">
+                        <input id="searchWorksheetsInput" oninput="filterWorksheetsChecklist()" placeholder="Search worksheets..." style="font-family: inherit; font-size: 12px; padding: 6px 10px 6px 30px; border-radius: 6px; border: 1.5px solid var(--border); outline: none; width: 100%;" />
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position: absolute; left: 10px; top: 9px; opacity: 0.5;">
+                            <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                    </div>
+                </div>
+                <div id="worksheetsListContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; max-height: 250px; overflow-y: auto; padding: 10px; border: 1.5px solid var(--border); border-radius: 8px; background: var(--surface-2);">
+                    <!-- Checkboxes will be inserted dynamically -->
                 </div>
             </div>
 
@@ -337,25 +361,141 @@
         }
 
         // ── Quick action helper ───────────────────────────────────────
+        let fetchedWorksheets = [];
+
+        function fetchWorksheetsForTopic() {
+            const topic = getTopicName();
+            if (!topic) {
+                toast('⚠️ Topic Name is required to fetch worksheets.', '#B45309');
+                return;
+            }
+
+            const btn = document.getElementById('fetchWorksheetsBtn');
+            const spinner = document.getElementById('fetchBtnSpinner');
+            btn.disabled = true;
+            spinner.style.display = 'inline-block';
+
+            fetch('/api/fetch_worksheets', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ topic_name: topic })
+            })
+            .then(res => res.json())
+            .then(data => {
+                btn.disabled = false;
+                spinner.style.display = 'none';
+                
+                if (data.status === 'success' && data.worksheets) {
+                    renderWorksheetsChecklist(data.worksheets);
+                    toast(`Loaded ${data.worksheets.length} worksheets!`, '#2E7D32');
+                } else {
+                    toast('⚠️ ' + (data.message || 'Failed to fetch worksheets.'), '#B45309');
+                }
+            })
+            .catch(() => {
+                btn.disabled = false;
+                spinner.style.display = 'none';
+                toast('❌ Failed to fetch worksheets from server.', '#C62828');
+            });
+        }
+
+        function renderWorksheetsChecklist(worksheets) {
+            fetchedWorksheets = worksheets;
+            const card = document.getElementById('worksheetsChecklistCard');
+            const container = document.getElementById('worksheetsListContainer');
+            
+            container.innerHTML = '';
+            document.getElementById('selectAllWorksheets').checked = false;
+            document.getElementById('searchWorksheetsInput').value = '';
+
+            if (worksheets.length === 0) {
+                container.innerHTML = `<div style="grid-column: 1/-1; padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;">No worksheets found under this topic.</div>`;
+                card.style.display = 'flex';
+                return;
+            }
+
+            worksheets.forEach(ws => {
+                const item = document.createElement('div');
+                item.style.display = 'flex';
+                item.style.alignItems = 'center';
+                item.style.gap = '10px';
+                item.style.padding = '8px 12px';
+                item.style.background = 'var(--surface)';
+                item.style.border = '1px solid var(--border)';
+                item.style.borderRadius = '6px';
+                item.style.transition = 'background-color 0.15s';
+                item.className = 'ws-list-item';
+                
+                item.innerHTML = `
+                    <input type="checkbox" class="ws-select-checkbox" value="${escHtml(ws.id)}" id="check_${escHtml(ws.id)}" style="cursor: pointer; width: 15px; height: 15px;" />
+                    <label for="check_${escHtml(ws.id)}" style="font-size: 12px; font-weight: 500; color: var(--text-dark); cursor: pointer; user-select: none; flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escHtml(ws.title)} (${escHtml(ws.id)})">
+                        <strong>${escHtml(ws.id)}</strong> - ${escHtml(ws.title)}
+                    </label>
+                `;
+                container.appendChild(item);
+            });
+
+            card.style.display = 'flex';
+        }
+
+        function toggleSelectAllWorksheets(masterCheckbox) {
+            const checkboxes = document.querySelectorAll('.ws-select-checkbox');
+            checkboxes.forEach(cb => {
+                const parent = cb.closest('.ws-list-item');
+                if (parent && parent.style.display !== 'none') {
+                    cb.checked = masterCheckbox.checked;
+                }
+            });
+        }
+
+        function filterWorksheetsChecklist() {
+            const query = document.getElementById('searchWorksheetsInput').value.trim().toLowerCase();
+            const items = document.querySelectorAll('.ws-list-item');
+            
+            items.forEach(item => {
+                const label = item.querySelector('label').textContent.toLowerCase();
+                if (label.includes(query)) {
+                    item.style.display = 'flex';
+                } else {
+                    item.style.display = 'none';
+                    const cb = item.querySelector('.ws-select-checkbox');
+                    if (cb) cb.checked = false;
+                }
+            });
+        }
+
+        // ── Quick action helper ───────────────────────────────────────
         function goToCheckPage() {
-            const wsId = document.getElementById('worksheetId').value.trim();
-            if (!wsId) { toast('⚠️ Enter a Worksheet ID first.', '#B45309'); return; }
+            let wsId = '';
+            const checked = document.querySelector('.ws-select-checkbox:checked');
+            if (checked) {
+                wsId = checked.value;
+            }
+            if (!wsId) { toast('⚠️ Select a worksheet checkbox first.', '#B45309'); return; }
             window.location.href = `/check/${encodeURIComponent(wsId)}`;
         }
 
         // ── Start answering ───────────────────────────────────────────
         function startAnswering() {
-            const wsId     = document.getElementById('worksheetId').value.trim();
             const topic    = getTopicName();
             const headless = document.getElementById('headlessToggle').checked;
 
-            if (!wsId)   { toast('⚠️ Worksheet ID is required.', '#B45309'); return; }
             if (!topic)  { toast('⚠️ Topic Name is required.', '#B45309');   return; }
+
+            // Gather selected worksheets
+            let wsIds = [];
+            const checkboxes = document.querySelectorAll('.ws-select-checkbox:checked');
+            checkboxes.forEach(cb => wsIds.push(cb.value));
+
+            if (wsIds.length === 0) {
+                toast('⚠️ Please select at least one worksheet.', '#B45309');
+                return;
+            }
 
             fetch('/api/run_answering', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ worksheet_id: wsId, topic_name: topic, headless })
+                body: JSON.stringify({ worksheet_ids: wsIds, topic_name: topic, headless })
             })
             .then(r => r.json())
             .then(data => {
@@ -365,7 +505,7 @@
                 lastLogCount = 0;
                 clearLog();
                 setRunning(true);
-                document.getElementById('siWs').textContent    = wsId;
+                document.getElementById('siWs').textContent    = wsIds.join(', ');
                 document.getElementById('siTopic').textContent = topic;
                 document.getElementById('siStart').textContent = runStartTime;
                 startPolling();

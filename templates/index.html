@@ -731,9 +731,15 @@
                         <input id="pipelineTopicManual" placeholder="Enter custom topic name..." style="display: none; font-family: inherit; font-size: 13px; padding: 9px 12px; border-radius: 8px; border: 1.5px solid var(--border); outline: none; margin-top: 8px; width: 100%;" />
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 6px;">
-                        <label for="pipelineWorksheetId" style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Worksheet ID</label>
+                        <label for="pipelineWorksheetId" style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Worksheet ID (Manual Optional)</label>
                         <input id="pipelineWorksheetId" placeholder="e.g. AQCONAL202" style="font-family: inherit; font-size: 13px; padding: 9px 12px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-dark); outline: none; transition: border-color 0.2s; width: 100%;" />
                     </div>
+                </div>
+                <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 5px;">
+                    <button id="fetchWorksheetsBtn" class="btn btn-secondary" onclick="fetchWorksheetsForTopic()">
+                        <span id="fetchBtnSpinner" class="spinner" style="display: none; margin-right: 6px; width: 12px; height: 12px; border-width: 2px;"></span>
+                        Fetch Worksheets for Topic
+                    </button>
                 </div>
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 5px;">
                     <div style="display: flex; align-items: center; gap: 8px;">
@@ -745,6 +751,28 @@
                             Verify & Answer Worksheet
                         </button>
                     </div>
+                </div>
+            </div>
+
+            <!-- Worksheets Checklist Card (Hidden by default) -->
+            <div id="worksheetsChecklistCard" class="glass-card" style="display: none; padding: 24px; flex-direction: column; gap: 18px;">
+                <h3 style="font-size: 13px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.8px; border-bottom: 2px solid var(--border); padding-bottom: 8px; margin-bottom: 5px;">
+                    Select Worksheets for Analysis
+                </h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 15px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="selectAllWorksheets" onchange="toggleSelectAllWorksheets(this)" style="cursor: pointer; width: 16px; height: 16px;" />
+                        <label for="selectAllWorksheets" style="font-size: 13px; font-weight: 600; color: var(--text-mid); cursor: pointer; user-select: none;">Select All Worksheets</label>
+                    </div>
+                    <div style="position: relative; width: 100%; max-width: 250px;">
+                        <input id="searchWorksheetsInput" oninput="filterWorksheetsChecklist()" placeholder="Search worksheets..." style="font-family: inherit; font-size: 12px; padding: 6px 10px 6px 30px; border-radius: 6px; border: 1.5px solid var(--border); outline: none; width: 100%;" />
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position: absolute; left: 10px; top: 9px; opacity: 0.5;">
+                            <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                    </div>
+                </div>
+                <div id="worksheetsListContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; max-height: 250px; overflow-y: auto; padding: 10px; border: 1.5px solid var(--border-light); border-radius: 8px; background: var(--surface-2);">
+                    <!-- Checkboxes will be inserted dynamically -->
                 </div>
             </div>
 
@@ -953,21 +981,141 @@
             }
         }
 
+        let fetchedWorksheets = [];
+
+        function fetchWorksheetsForTopic() {
+            let topicName = document.getElementById("pipelineTopic").value;
+            if (topicName === "__manual__") {
+                topicName = document.getElementById("pipelineTopicManual").value.trim();
+            }
+            if (!topicName) {
+                showToast("⚠️ Topic Name is required to fetch worksheets.", "#E65100");
+                return;
+            }
+
+            const btn = document.getElementById("fetchWorksheetsBtn");
+            const spinner = document.getElementById("fetchBtnSpinner");
+            btn.disabled = true;
+            spinner.style.display = "inline-block";
+
+            fetch("/api/fetch_worksheets", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ topic_name: topicName })
+            })
+            .then(res => res.json())
+            .then(data => {
+                btn.disabled = false;
+                spinner.style.display = "none";
+                
+                if (data.status === "success" && data.worksheets) {
+                    renderWorksheetsChecklist(data.worksheets);
+                    showToast(`✅ Loaded ${data.worksheets.length} worksheets!`, "#2E7D32");
+                } else {
+                    showToast("⚠️ " + (data.message || "Failed to fetch worksheets."), "#E65100");
+                }
+            })
+            .catch(() => {
+                btn.disabled = false;
+                spinner.style.display = "none";
+                showToast("❌ Failed to fetch worksheets from server.", "#C62828");
+            });
+        }
+
+        function renderWorksheetsChecklist(worksheets) {
+            fetchedWorksheets = worksheets;
+            const card = document.getElementById("worksheetsChecklistCard");
+            const container = document.getElementById("worksheetsListContainer");
+            
+            container.innerHTML = "";
+            document.getElementById("selectAllWorksheets").checked = false;
+            document.getElementById("searchWorksheetsInput").value = "";
+
+            if (worksheets.length === 0) {
+                container.innerHTML = `<div style="grid-column: 1/-1; padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;">No worksheets found under this topic.</div>`;
+                card.style.display = "flex";
+                return;
+            }
+
+            worksheets.forEach(ws => {
+                const item = document.createElement("div");
+                item.style.display = "flex";
+                item.style.alignItems = "center";
+                item.style.gap = "10px";
+                item.style.padding = "8px 12px";
+                item.style.background = "var(--surface)";
+                item.style.border = "1px solid var(--border)";
+                item.style.borderRadius = "6px";
+                item.style.transition = "background-color 0.15s";
+                item.className = "ws-list-item";
+                
+                item.innerHTML = `
+                    <input type="checkbox" class="ws-select-checkbox" value="${escapeHtml(ws.id)}" id="check_${escapeHtml(ws.id)}" style="cursor: pointer; width: 15px; height: 15px;" />
+                    <label for="check_${escapeHtml(ws.id)}" style="font-size: 12px; font-weight: 500; color: var(--text-dark); cursor: pointer; user-select: none; flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(ws.title)} (${escapeHtml(ws.id)})">
+                        <strong>${escapeHtml(ws.id)}</strong> - ${escapeHtml(ws.title)}
+                    </label>
+                `;
+                container.appendChild(item);
+            });
+
+            card.style.display = "flex";
+        }
+
+        function toggleSelectAllWorksheets(masterCheckbox) {
+            const checkboxes = document.querySelectorAll(".ws-select-checkbox");
+            checkboxes.forEach(cb => {
+                const parent = cb.closest(".ws-list-item");
+                if (parent && parent.style.display !== "none") {
+                    cb.checked = masterCheckbox.checked;
+                }
+            });
+        }
+
+        function filterWorksheetsChecklist() {
+            const query = document.getElementById("searchWorksheetsInput").value.trim().toLowerCase();
+            const items = document.querySelectorAll(".ws-list-item");
+            
+            items.forEach(item => {
+                const label = item.querySelector("label").textContent.toLowerCase();
+                if (label.includes(query)) {
+                    item.style.display = "flex";
+                } else {
+                    item.style.display = "none";
+                    const cb = item.querySelector(".ws-select-checkbox");
+                    if (cb) cb.checked = false;
+                }
+            });
+        }
+
         function startAnalysis() {
             const startBtn = document.getElementById("startBtn");
             const stopBtn  = document.getElementById("stopBtn");
             
-            const wsId = document.getElementById("pipelineWorksheetId").value.trim();
             let topicName = document.getElementById("pipelineTopic").value;
             if (topicName === "__manual__") {
                 topicName = document.getElementById("pipelineTopicManual").value.trim();
             }
             const skipExtraction = document.getElementById("skipExtraction").checked;
 
-            if (!wsId) {
-                showToast("⚠️ Worksheet ID is required.", "#E65100");
-                return;
+            // Gather selected worksheets
+            let wsIds = [];
+            const checklistCard = document.getElementById("worksheetsChecklistCard");
+            if (checklistCard && checklistCard.style.display !== "none") {
+                const checkboxes = document.querySelectorAll(".ws-select-checkbox:checked");
+                checkboxes.forEach(cb => wsIds.push(cb.value));
             }
+
+            // Fallback to manual input if no checkboxes selected
+            const manualWsId = document.getElementById("pipelineWorksheetId").value.trim();
+            if (wsIds.length === 0) {
+                if (manualWsId) {
+                    wsIds.push(manualWsId);
+                } else {
+                    showToast("⚠️ Please enter a Worksheet ID or fetch and select worksheets.", "#E65100");
+                    return;
+                }
+            }
+
             if (!topicName) {
                 showToast("⚠️ Topic Name is required.", "#E65100");
                 return;
@@ -982,7 +1130,7 @@
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     topic_name: topicName,
-                    worksheet_id: wsId,
+                    worksheet_ids: wsIds,
                     skip_extraction: skipExtraction
                 })
             })

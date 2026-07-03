@@ -106,6 +106,7 @@ def save_answering_report_to_db(worksheet_id: str, topic_name: str, results: dic
     try:
         from pymongo import MongoClient
         from datetime import datetime
+        import re
         client = MongoClient(config.MONGO_URI, serverSelectionTimeoutMS=5000)
         db = client[config.MONGO_DB]
         answering_report_coll = db["Answering_Report"]
@@ -160,9 +161,122 @@ def save_answering_report_to_db(worksheet_id: str, topic_name: str, results: dic
             upsert=True
         )
         log.info("Successfully saved answering report to MongoDB for worksheet: %s", worksheet_id)
+
+        # 1. Update Worksheet_Report for incorrect/partially_correct questions
+        worksheet_report_coll = db["Worksheet_Report"]
+        
+        def format_answer_for_msg(ans):
+            if ans is None:
+                return "None"
+            if isinstance(ans, list):
+                ans_str = ", ".join(map(str, ans))
+            else:
+                ans_str = str(ans).strip()
+            
+            # Check if it is a single letter A-J, prefix it with "Option "
+            if len(ans_str) == 1 and ans_str.upper() in "ABCDEFGHIJ":
+                return f"Option {ans_str.upper()}"
+            
+            # Check if it starts with a letter like "A (-2)", but not already "Option"
+            if not ans_str.lower().startswith("option"):
+                if len(ans_str) >= 3 and ans_str[0].upper() in "ABCDEFGHIJ" and ans_str[1] in (" ", "("):
+                    return f"Option {ans_str}"
+            return ans_str
+            
+        for q_no, q_data in results.items():
+            status = q_data.get("status", "unknown")
+            if status in ("incorrect", "partially_correct"):
+                website_correct_answer = q_data.get("website_correct_answer")
+                has_web = website_correct_answer is not None and str(website_correct_answer).strip().lower() not in ("none", "")
+                
+                if has_web:
+                    correct_ans_formatted = format_answer_for_msg(website_correct_answer)
+                    ai_text = f"Issue: Q{q_no}. The worksheet answer key is incorrect. The correct answer is {correct_ans_formatted}."
+                else:
+                    ai_text = f"Issue: Q{q_no}. The worksheet answer key is incorrect."
+                analysis_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                worksheet_report_coll.update_one(
+                    {"worksheet_id": worksheet_id, "question_number": int(q_no)},
+                    {
+                        "$set": {
+                            "ai_response": ai_text,
+                            "status": "Issue",
+                            "analysis_time": analysis_time_str
+                        },
+                        "$setOnInsert": {
+                            "image_name": f"Question_{q_no}.png",
+                            "created_timestamp": datetime.now()
+                        }
+                    },
+                    upsert=True
+                )
+                log.info("Updated Worksheet_Report for worksheet %s question %s to: %s", worksheet_id, q_no, ai_text)
+
+        # 2. Sync changes to WS_answers collection
+        ws_answers_coll = db[config.MONGO_ANSWERS_COLLECTION]
+        
+        # Read the topic name from screenshots directory if it exists, or fallback
+        resolved_topic_name = topic_name
+        screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshots")
+        topic_path = os.path.join(screenshots_dir, worksheet_id, "topic.txt")
+        if os.path.exists(topic_path):
+            try:
+                with open(topic_path, "r", encoding="utf-8") as f:
+                    resolved_topic_name = f.read().strip()
+            except Exception:
+                pass
+        else:
+            existing_ws_ans = ws_answers_coll.find_one({"worksheetID": worksheet_id})
+            if existing_ws_ans and existing_ws_ans.get("topicName"):
+                resolved_topic_name = existing_ws_ans["topicName"]
+                
+        # Query Worksheet_Report for all questions of this worksheet
+        report_docs = list(worksheet_report_coll.find({"worksheet_id": worksheet_id}))
+        
+        # Sort documents by question number
+        report_docs.sort(key=lambda d: d.get("question_number", 0))
+        
+        # Build the WS_answers document
+        ans_doc = {
+            "topicName": resolved_topic_name,
+            "worksheetID": worksheet_id
+        }
+        
+        # Populate q1, q2, q3, q4, q5 with default empty string first
+        for i in range(1, 6):
+            ans_doc[f"q{i}"] = ""
+            
+        for rd in report_docs:
+            q_num = rd.get("question_number", 0)
+            ai_res = rd.get("ai_response", "")
+            if q_num > 0:
+                ans_value = ""
+                if ai_res:
+                    match = re.search(r'\[RESULT:\s*(.*?)\]', ai_res, re.IGNORECASE)
+                    if match:
+                        ans_value = match.group(1).strip()
+                    elif "issue:" in ai_res.lower() or ai_res.startswith("❌"):
+                        ans_value = "Issue"
+                    else:
+                        ans_match = re.search(r'correct\s+(?:answer|sequence)\s+is\s+(.*?)\.(?:\s+|$)', ai_res, re.IGNORECASE)
+                        if ans_match:
+                            ans_value = ans_match.group(1).strip()
+                        else:
+                            ans_value = ai_res.strip()
+                ans_doc[f"q{q_num}"] = ans_value
+                
+        # Save or update in MongoDB WS_answers collection
+        ws_answers_coll.update_one(
+            {"worksheetID": worksheet_id},
+            {"$set": ans_doc},
+            upsert=True
+        )
+        log.info("Synced and updated WS_answers for worksheet %s", worksheet_id)
+        
     except Exception as e:
-        log.error("Failed to save answering report to MongoDB for %s: %s", worksheet_id, e)
-        print(f"[WARN] Failed to save answering report to MongoDB: {e}")
+        log.error("Failed to save answering report or sync Worksheet_Report to MongoDB for %s: %s", worksheet_id, e)
+        print(f"[WARN] Failed to save answering report/sync to MongoDB: {e}")
 
 
 def run_automation() -> None:
