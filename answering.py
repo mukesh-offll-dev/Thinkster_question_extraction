@@ -172,32 +172,62 @@ def handle_mcq(driver: WebDriver, answer: str) -> bool:
 
 def handle_matrix(driver: WebDriver, answers: list) -> bool:
     """Select options for True/False matrix/table question."""
-    rows = driver.find_elements(By.CSS_SELECTOR, "tr")
+    rows = driver.find_elements(By.CSS_SELECTOR, "tr, [class*='lrn-matrix-row']")
     visible_rows = []
     
     for r in rows:
         try:
             if r.is_displayed():
-                inputs = r.find_elements(By.CSS_SELECTOR, "input[type='radio'], [role='radio']")
-                if inputs:
-                    visible_rows.append((r, inputs))
+                cells = r.find_elements(By.TAG_NAME, "td")
+                inputs = r.find_elements(By.CSS_SELECTOR, "input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox']")
+                if len(cells) > 1 or inputs:
+                    visible_rows.append((r, cells, inputs))
         except Exception:
             pass
             
-    if not visible_rows:
+    # Filter out header row
+    valid_rows = []
+    for r, cells, inputs in visible_rows:
+        if inputs:
+            valid_rows.append((r, cells, inputs))
+        elif len(cells) > 1:
+            has_clickable = False
+            for cell in cells[1:]:
+                if cell.find_elements(By.CSS_SELECTOR, "input, label, span, [role]"):
+                    has_clickable = True
+                    break
+            if has_clickable:
+                valid_rows.append((r, cells, inputs))
+                
+    if not valid_rows:
         return False
         
-    log.info("Matrix table detected. Rows: %d", len(visible_rows))
-    for idx, (row, inputs) in enumerate(visible_rows):
+    log.info("Matrix table detected. Valid rows: %d", len(valid_rows))
+    for idx, (row, cells, inputs) in enumerate(valid_rows):
         if idx >= len(answers):
             break
         val = str(answers[idx]).strip().lower()
         select_idx = 0 if val in ("true", "t", "yes", "y") else 1
-        if select_idx < len(inputs):
+        
+        clicked = False
+        if inputs and select_idx < len(inputs):
             try:
                 driver.execute_script("arguments[0].click();", inputs[select_idx])
+                clicked = True
+            except Exception:
+                pass
+                
+        if not clicked and cells and (select_idx + 1) < len(cells):
+            target_cell = cells[select_idx + 1]
+            try:
+                sub_elements = target_cell.find_elements(By.CSS_SELECTOR, "input, label, span, [role]")
+                if sub_elements:
+                    driver.execute_script("arguments[0].click();", sub_elements[0])
+                else:
+                    driver.execute_script("arguments[0].click();", target_cell)
+                clicked = True
             except Exception as e:
-                log.error("Failed to select matrix row %d column %d: %s", idx, select_idx, e)
+                log.error("Failed to click matrix cell for row %d, col %d: %s", idx, select_idx, e)
                 
     return True
 
@@ -207,22 +237,18 @@ def is_keypad_button(btn: WebElement) -> bool:
     try:
         if not btn.is_displayed():
             return False
-        
-        # Keypad buttons are never in the top header area (which is y < 250)
-        rect = btn.rect
-        if not rect or rect.get('y', 0) < 250:
-            return False
             
         classes = (btn.get_attribute("class") or "").lower()
-        if "rounded-full" in classes:
-            return False
+        if "lrn_btn_grid" in classes or "lrn-qwerty-btn" in classes:
+            return True
             
+        # Also check parent class chain
         parent_classes = ""
         try:
             parent = btn.find_element(By.XPATH, "..")
-            parent_classes = parent.get_attribute("class") or ""
+            parent_classes = (parent.get_attribute("class") or "").lower()
             gp = parent.find_element(By.XPATH, "..")
-            parent_classes += " " + (gp.get_attribute("class") or "")
+            parent_classes += " " + (gp.get_attribute("class") or "").lower()
         except Exception:
             pass
             
@@ -234,14 +260,213 @@ def is_keypad_button(btn: WebElement) -> bool:
     return False
 
 
+def tokenize_math_string(s: str) -> list:
+    """Tokenizes a mathematical expression or LaTeX string into actionable commands."""
+    tokens = []
+    i = 0
+    n = len(s)
+    while i < n:
+        c = s[i]
+        
+        # 1. Backslash commands
+        if c == '\\':
+            cmd = '\\'
+            i += 1
+            while i < n and (s[i].isalpha() or s[i] in ('(', ')', '[', ']')):
+                cmd += s[i]
+                i += 1
+            tokens.append(('cmd', cmd))
+            continue
+            
+        # 2. Exponent, Subscript, Braces, Parentheses
+        if c in ('^', '_', '{', '}', '(', ')'):
+            tokens.append(('char', c))
+            i += 1
+            continue
+            
+        # 3. Digits & Dot
+        if c.isdigit() or c == '.':
+            num = ''
+            while i < n and (s[i].isdigit() or s[i] == '.'):
+                num += s[i]
+                i += 1
+            for digit in num:
+                tokens.append(('char', digit))
+            continue
+            
+        # 4. Letters (variables)
+        if c.isalpha():
+            tokens.append(('var', c))
+            i += 1
+            continue
+            
+        # 5. Operators & whitespace
+        if c in ('+', '-', '=', '*', '/'):
+            tokens.append(('char', c))
+            i += 1
+            continue
+            
+        if c.isspace():
+            i += 1
+            continue
+            
+        tokens.append(('char', c))
+        i += 1
+        
+    return tokens
+
+
+def generate_keypad_actions(tokens: list) -> list:
+    """Converts math/LaTeX tokens into sequential layout and click button actions."""
+    actions = []
+    i = 0
+    n = len(tokens)
+    while i < n:
+        t_type, val = tokens[i]
+        
+        if t_type == 'cmd':
+            if val == '\\sqrt':
+                actions.append(('Basic', 'click', '//button[@data-mq-value="\\sqrt"]'))
+            elif val == '\\frac':
+                actions.append(('Basic', 'click', '//button[@data-mq-value="/"]'))
+            elif val == '\\abs':
+                actions.append(('Basic', 'click', '//button[@data-mq-value="\\abs"]'))
+            elif val == '\\pi':
+                actions.append(('Basic', 'click', '//button[@data-mq-value="\\pi"]'))
+            elif val == '\\pm':
+                actions.append(('Basic', 'click', '//button[@data-mq-value="\\pm"]'))
+            elif val in ('\\infty', '\\infinity'):
+                actions.append(('Basic', 'click', '//button[@data-mq-value="\\infinity"]'))
+            elif val == '\\degree':
+                actions.append(('Basic', 'click', '//button[@data-mq-value="\\degree"]'))
+            else:
+                for c in val:
+                    actions.append(('Keyboard' if c.isalpha() else 'Basic', 'click', f'//button[@data-mq-value="{c}"]'))
+            i += 1
+            
+        elif t_type == 'char' and val == '^':
+            actions.append(('Basic', 'click', '//button[@data-mq-value="^"]'))
+            i += 1
+            if i < n and tokens[i] == ('char', '{'):
+                i += 1
+            else:
+                if i < n:
+                    next_t_type, next_val = tokens[i]
+                    actions.append(('Keyboard' if next_t_type == 'var' else 'Basic', 'click', f'//button[@data-mq-value="{next_val}"]'))
+                    actions.append(('Basic', 'click', '//button[@data-mq-value="Right"]'))
+                    i += 1
+                    
+        elif t_type == 'char' and val == '_':
+            actions.append(('Basic', 'click', '//button[@data-mq-value="_"]'))
+            i += 1
+            if i < n and tokens[i] == ('char', '{'):
+                i += 1
+            else:
+                if i < n:
+                    next_t_type, next_val = tokens[i]
+                    actions.append(('Keyboard' if next_t_type == 'var' else 'Basic', 'click', f'//button[@data-mq-value="{next_val}"]'))
+                    actions.append(('Basic', 'click', '//button[@data-mq-value="Right"]'))
+                    i += 1
+                    
+        elif t_type == 'char' and val == '{':
+            i += 1
+            
+        elif t_type == 'char' and val == '}':
+            actions.append(('Basic', 'click', '//button[@data-mq-value="Right"]'))
+            i += 1
+            
+        elif t_type == 'char' and val == '(':
+            actions.append(('Basic', 'click', '//button[@data-mq-value="("]'))
+            i += 1
+            
+        elif t_type == 'char' and val == ')':
+            actions.append(('Basic', 'click', '//button[@data-mq-value="Right"]'))
+            i += 1
+            
+        elif t_type == 'var':
+            actions.append(('Keyboard', 'click', f'//button[@data-mq-value="{val.lower()}"]'))
+            i += 1
+            
+        else:
+            map_val = val
+            if val == '*':
+                map_val = '×'
+            elif val == '/':
+                map_val = '÷'
+            actions.append(('Basic', 'click', f'//button[@data-mq-value="{map_val}"]'))
+            i += 1
+            
+    return actions
+
+
+def switch_keypad_layout(driver: WebDriver, target_layout: str) -> bool:
+    """Switch the virtual keypad layout between 'Basic' and 'Keyboard'."""
+    try:
+        title_val = "Basic" if target_layout == "Basic" else "Keyboard"
+        option = driver.find_element(By.XPATH, f"//button[@class and (@title='{title_val}' or @aria-label='{title_val}')]")
+        classes = option.get_attribute("class") or ""
+        if "lrn_selected" in classes:
+            return True
+            
+        toggles = driver.find_elements(By.CSS_SELECTOR, "button.lrn_dropdown_toggle")
+        visible_toggles = [t for t in toggles if t.is_displayed()]
+        if visible_toggles:
+            driver.execute_script("arguments[0].click();", visible_toggles[0])
+            time.sleep(0.5)
+            driver.execute_script("arguments[0].click();", option)
+            time.sleep(0.5)
+            return True
+    except Exception as e:
+        log.warning("Failed to switch keypad layout to %s: %s", target_layout, e)
+    return False
+
+
+def enter_math_answer(driver: WebDriver, answer: str) -> bool:
+    """Translate and enter a LaTeX/math answer via virtual keypad layout switches and clicks."""
+    tokens = tokenize_math_string(answer)
+    actions = generate_keypad_actions(tokens)
+    log.info("Entering math answer via virtual keypad. Generated actions: %s", actions)
+    
+    for layout, act_type, selector in actions:
+        if layout:
+            switch_success = switch_keypad_layout(driver, layout)
+            if not switch_success:
+                log.warning("Layout switch to %s might have failed.", layout)
+                
+        try:
+            buttons = driver.find_elements(By.XPATH, selector)
+            visible_btn = None
+            for btn in buttons:
+                if btn.is_displayed():
+                    visible_btn = btn
+                    break
+                    
+            if visible_btn:
+                driver.execute_script("arguments[0].click();", visible_btn)
+                time.sleep(0.25)
+            else:
+                log.warning("Keypad button for selector '%s' not visible.", selector)
+                if "Right" in selector:
+                    # Fallback for Right arrow keystroke button
+                    fallback_btns = driver.find_elements(By.XPATH, "//button[@aria-label='Move cursor right' or @title='Move cursor right' or contains(@class, 'lrn-btn-grid-dir')]")
+                    for btn in fallback_btns:
+                        if btn.is_displayed() and "right" in (btn.get_attribute("aria-label") or "").lower():
+                            driver.execute_script("arguments[0].click();", btn)
+                            time.sleep(0.25)
+                            break
+        except Exception as e:
+            log.warning("Error clicking keypad button %s: %s", selector, e)
+            
+    return True
+
+
 def handle_text_inputs(driver: WebDriver, answer: str) -> bool:
     """Type answer into text input boxes and handle custom keypads if shown."""
-    # 1. Look for visible editable math fields (e.g. MathQuill)
+    # 1. Look for visible editable math fields or standard inputs
     math_fields = driver.find_elements(By.CSS_SELECTOR, ".mq-editable-field, .lrn-formula-input")
     visible_math_fields = [f for f in math_fields if f.is_displayed()]
     
-    # 2. Look for standard inputs
-    inputs = driver.find_elements(By.CSS_SELECTOR, "input[type='text'], input[type='number'], textarea")
+    inputs = driver.find_elements(By.CSS_SELECTOR, "input, textarea, [class*='mq-textarea'] textarea")
     visible_inputs = [i for i in inputs if i.is_displayed() and not i.get_attribute("readonly")]
     
     all_fields = visible_math_fields + visible_inputs
@@ -255,93 +480,66 @@ def handle_text_inputs(driver: WebDriver, answer: str) -> bool:
             driver.execute_script("arguments[0].click();", field)
             time.sleep(1.0)
             
-            # If this is a MathQuill field, try writing the LaTeX value directly using JavaScript
-            classes = field.get_attribute("class") or ""
-            is_mathquill = "mq-editable-field" in classes or "lrn-formula-input" in classes
-            if is_mathquill:
-                js_write_latex = """
-                function setMathQuillLatex(el, latex) {
-                    try {
-                        if (typeof MQ !== 'undefined' && MQ.MathField) {
-                            let mf = MQ.MathField(el);
-                            if (mf) {
-                                mf.latex(latex);
-                                return true;
-                            }
-                        }
-                        if (typeof jQuery !== 'undefined') {
-                            let $el = jQuery(el);
-                            let mq = $el.data('MathQuill');
-                            if (mq) {
-                                if (typeof mq.latex === 'function') {
-                                    mq.latex(latex);
-                                    return true;
-                                }
-                                if (mq.__controller && typeof mq.__controller.write === 'function') {
-                                    mq.__controller.write(latex);
-                                    return true;
-                                }
-                            }
-                            if (typeof $el.mathquill === 'function') {
-                                $el.mathquill('latex', latex);
-                                return true;
-                            }
-                        }
-                    } catch(e) {
-                        console.error('Error setting MathQuill LaTeX:', e);
-                    }
-                    return false;
-                }
-                return setMathQuillLatex(arguments[0], arguments[1]);
-                """
-                latex_success = driver.execute_script(js_write_latex, field, answer)
-                if latex_success:
-                    log.info("Successfully wrote LaTeX '%s' via MathQuill JS API", answer)
-                    continue
-            
-            # Check if there are visible keypad buttons on the page
-            buttons = driver.find_elements(By.TAG_NAME, "button")
-            keypad_btns = [b for b in buttons if is_keypad_button(b)]
+            # Wait up to 3.0 seconds for the virtual keypad to appear
+            keypad_btns = []
+            for _ in range(6):
+                buttons = driver.find_elements(By.TAG_NAME, "button")
+                keypad_btns = [b for b in buttons if is_keypad_button(b)]
+                if keypad_btns:
+                    break
+                time.sleep(0.5)
             
             if keypad_btns and len(answer) > 0:
                 log.info("On-screen keypad detected. Typing '%s' via keypad...", answer)
-                for char in answer:
-                    clicked = False
-                    for btn in keypad_btns:
-                        try:
-                            # Clean up the button text to match characters
-                            btn_text = btn.text.strip().split('\n')[0].strip().lower()
-                            if btn_text == char.lower():
-                                driver.execute_script("arguments[0].click();", btn)
-                                time.sleep(0.25)
-                                clicked = True
-                                break
-                        except Exception:
-                            pass
-                    if not clicked:
-                        # Special character mapping fallback (e.g. fraction slash /)
-                        for btn in keypad_btns:
-                            try:
-                                btn_text = btn.text.strip().lower()
-                                if char == "/" and ("fraction" in btn_text or "/" in btn_text or "÷" in btn_text):
-                                    driver.execute_script("arguments[0].click();", btn)
-                                    time.sleep(0.25)
-                                    clicked = True
-                                    break
-                            except Exception:
-                                pass
-                    if not clicked:
-                        # Fallback: type character via active element keyboard keys
-                        log.info("Character '%s' not found on keypad. Sending keys fallback.", char)
-                        try:
-                            active_el = driver.switch_to.active_element
-                            active_el.send_keys(char)
-                            time.sleep(0.25)
-                        except Exception:
-                            pass
+                enter_math_answer(driver, answer)
             else:
-                log.info("No keypad detected. Typing '%s' directly...", answer)
-                # If it is a standard input, try typing directly
+                # Fallback path if no keypad is displayed
+                classes = field.get_attribute("class") or ""
+                is_mathquill = "mq-editable-field" in classes or "lrn-formula-input" in classes
+                
+                if is_mathquill:
+                    # If this is a MathQuill field, try writing the LaTeX value directly using JavaScript
+                    js_write_latex = """
+                    function setMathQuillLatex(el, latex) {
+                        try {
+                            if (typeof MQ !== 'undefined' && MQ.MathField) {
+                                let mf = MQ.MathField(el);
+                                if (mf) {
+                                    mf.latex(latex);
+                                    return true;
+                                }
+                            }
+                            if (typeof jQuery !== 'undefined') {
+                                let $el = jQuery(el);
+                                let mq = $el.data('MathQuill');
+                                if (mq) {
+                                    if (typeof mq.latex === 'function') {
+                                        mq.latex(latex);
+                                        return true;
+                                    }
+                                    if (mq.__controller && typeof mq.__controller.write === 'function') {
+                                        mq.__controller.write(latex);
+                                        return true;
+                                    }
+                                }
+                                if (typeof $el.mathquill === 'function') {
+                                    $el.mathquill('latex', latex);
+                                    return true;
+                                }
+                            }
+                        } catch(e) {
+                            console.error('Error setting MathQuill LaTeX:', e);
+                        }
+                        return false;
+                    }
+                    return setMathQuillLatex(arguments[0], arguments[1]);
+                    """
+                    latex_success = driver.execute_script(js_write_latex, field, answer)
+                    if latex_success:
+                        log.info("Successfully wrote LaTeX '%s' via MathQuill JS API", answer)
+                        continue
+                
+                log.info("No active keypad. Typing '%s' directly...", answer)
                 if field.tag_name in ("input", "textarea"):
                     try:
                         field.clear()
