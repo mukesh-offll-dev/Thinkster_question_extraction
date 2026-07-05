@@ -870,6 +870,35 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
     Returns:
         dict - Summary of correctness results per question number.
     """
+    # Normalize and copy answers to avoid modifying the caller's copy
+    import re
+    normalized_answers = {}
+    for q_num, val in answers.items():
+        if val is not None and str(val).strip() != "":
+            if isinstance(val, bool):
+                val = str(val)
+            elif isinstance(val, list):
+                val = [str(x) if isinstance(x, bool) else x for x in val]
+            else:
+                val_str = str(val).strip()
+                if val_str.startswith("[") and val_str.endswith("]"):
+                    try:
+                        loaded = json.loads(val_str)
+                        if isinstance(loaded, list):
+                            val = [str(x) if isinstance(x, bool) else x for x in loaded]
+                        else:
+                            val = loaded
+                    except Exception:
+                        pass
+                elif "," in val_str or "\n" in val_str:
+                    if not (val_str.startswith("(") and val_str.endswith(")")) and not (val_str.startswith("[") and val_str.endswith("]")):
+                        parts = [p.strip() for p in re.split(r'[,\n]', val_str) if p.strip()]
+                        val = [str(x) if isinstance(x, bool) else x for x in parts]
+                else:
+                    val = val_str
+            normalized_answers[str(q_num)] = val
+    answers = normalized_answers
+
     if not wait_for_loading(driver):
         log.error("Worksheet did not load in time. Skipping answering flow.")
         return {}

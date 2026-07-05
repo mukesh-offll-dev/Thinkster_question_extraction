@@ -9,6 +9,7 @@ import sys
 import os
 import time
 import json
+import re
 from typing import Optional
 
 # Windows terminal: ensure UTF-8 output
@@ -78,14 +79,28 @@ def load_answers_from_db(worksheet_id: str) -> Optional[dict]:
         for key, val in doc.items():
             if key.startswith("q") and key[1:].isdigit():
                 q_num = key[1:]  # e.g., "1"
-                if val:
-                    val_str = str(val).strip()
-                    # Check if it represents a JSON list (e.g. T/F matrix tables like ["True", "False"])
-                    if val_str.startswith("[") and val_str.endswith("]"):
-                        try:
-                            val = json.loads(val_str)
-                        except Exception:
-                            pass
+                if val is not None and str(val).strip() != "":
+                    if isinstance(val, bool):
+                        val = str(val)
+                    elif isinstance(val, list):
+                        val = [str(x) if isinstance(x, bool) else x for x in val]
+                    else:
+                        val_str = str(val).strip()
+                        if val_str.startswith("[") and val_str.endswith("]"):
+                            try:
+                                loaded = json.loads(val_str)
+                                if isinstance(loaded, list):
+                                    val = [str(x) if isinstance(x, bool) else x for x in loaded]
+                                else:
+                                    val = loaded
+                            except Exception:
+                                pass
+                        elif "," in val_str or "\n" in val_str:
+                            if not (val_str.startswith("(") and val_str.endswith(")")) and not (val_str.startswith("[") and val_str.endswith("]")):
+                                parts = [p.strip() for p in re.split(r'[,\n]', val_str) if p.strip()]
+                                val = [str(x) if isinstance(x, bool) else x for x in parts]
+                        else:
+                            val = val_str
                     answers[q_num] = val
         
         if answers:
