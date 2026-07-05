@@ -5,6 +5,7 @@
 import os
 import time
 import json
+import unicodedata
 from typing import Optional
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
@@ -460,6 +461,276 @@ def enter_math_answer(driver: WebDriver, answer: str) -> bool:
     return True
 
 
+def normalize_text(text: str) -> str:
+    """Normalize and clean mathematical/variable text for matching."""
+    if not text:
+        return ""
+    # Normalize unicode mathematical alphanumeric symbols to standard ASCII (e.g. italic x to standard x)
+    n = unicodedata.normalize('NFKC', text)
+    
+    # If it is a fraction represented via newlines (e.g., only digits and newlines/spaces)
+    # replace newlines with a slash.
+    lines = [line.strip() for line in n.split('\n') if line.strip()]
+    if len(lines) == 2 and all(part.isdigit() for part in lines):
+        n = "/".join(lines)
+        
+    # Keep only alphanumeric characters and basic operators (+, -, *, /)
+    cleaned = "".join(c for c in n if c.isalnum() or c in ('+', '-', '*', '/')).lower()
+    return cleaned
+
+
+def get_active_container(driver: WebDriver, q_no: int) -> Optional[WebElement]:
+    """Retrieve the learnosity-item container representing q_no, waiting for it to be visible."""
+    start_time = time.time()
+    while time.time() - start_time < 5.0:
+        try:
+            items = driver.find_elements(By.CSS_SELECTOR, ".learnosity-item")
+            if len(items) >= q_no:
+                el = items[q_no - 1]
+                style = el.get_attribute("style") or ""
+                if "visibility: visible" in style or "opacity: 1" in style:
+                    return el
+        except Exception:
+            pass
+        time.sleep(0.1)
+        
+    try:
+        items = driver.find_elements(By.CSS_SELECTOR, ".learnosity-item")
+        if len(items) >= q_no:
+            return items[q_no - 1]
+    except Exception:
+        pass
+    return None
+
+
+def handle_cloze_and_drag_drop(driver: WebDriver, answers: list, active_item: WebElement) -> bool:
+    """
+    Handle drag-and-drop matching, cloze fill-in-the-blanks, and custom/select dropdowns.
+    Maps values in 'answers' list to active input/drop slots ordered by DOM/visual index.
+    """
+    if not active_item:
+        return False
+        
+    js_get_slots = """
+    function getActiveSlots(activeItem) {
+        let slots = {};
+        let elements = activeItem.querySelectorAll('.lrn_cloze_response, .lrn_dropzone, .lrn_assoc_col2, .lrn-response-input, [data-inputid]');
+        
+        elements.forEach(el => {
+            let inputId = el.getAttribute('data-inputid');
+            if (inputId === null || inputId === undefined) return;
+            
+            let classes = el.className || "";
+            // We do NOT skip lrn_invisible in slot definition to count all backing slots correctly
+            
+            if (!slots[inputId]) {
+                slots[inputId] = {
+                    inputId: parseInt(inputId, 10),
+                    elements: []
+                };
+            }
+            
+            let tagName = el.tagName.toLowerCase();
+            let isMathQuill = classes.includes('mq-editable-field') || classes.includes('lrn_math_editable') || classes.includes('lrn-clozeformula-input');
+            let isDropzone = classes.includes('lrn_dropzone') || classes.includes('lrn_drop') || classes.includes('lrn_assoc_col2');
+            let isDropdown = tagName === 'select' || classes.includes('lrn_dropdown');
+            let isStandardInput = tagName === 'input' || tagName === 'textarea';
+            
+            slots[inputId].elements.push({
+                tagName: tagName,
+                className: classes,
+                isMathQuill: isMathQuill,
+                isDropzone: isDropzone,
+                isDropdown: isDropdown,
+                isStandardInput: isStandardInput
+            });
+        });
+        
+        return Object.values(slots).sort((a, b) => a.inputId - b.inputId);
+    }
+    return getActiveSlots(arguments[0]);
+    """
+    
+    try:
+        active_slots = driver.execute_script(js_get_slots, active_item)
+    except Exception as e:
+        log.warning("Failed to retrieve active cloze/drag-drop slots via JS: %s", e)
+        return False
+        
+    if not active_slots:
+        return False
+        
+    log.info("Detected %d active cloze/drag-drop slots on page.", len(active_slots))
+    success_count = 0
+    
+    # Pre-fetch visible interactive elements in DOM order within active_item
+    visible_draggables = []
+    draggables = driver.find_elements(By.CSS_SELECTOR, ".lrn_btn_drag.lrn_draggable, [draggable='true']")
+    for d in draggables:
+        classes = d.get_attribute("class") or ""
+        if "lrn_invisible" not in classes and d.is_displayed():
+            visible_draggables.append(d)
+            
+    visible_mq_spans = []
+    mq_spans = active_item.find_elements(By.CSS_SELECTOR, ".lrn-clozeformula-input, .mq-editable-field, .lrn_math_editable")
+    for span in mq_spans:
+        classes = span.get_attribute("class") or ""
+        if "lrn_invisible" not in classes and span.is_displayed():
+            visible_mq_spans.append(span)
+            
+    # JS helper to write directly to backing input/select/textarea by visual index
+    js_set_backing_input_by_index = """
+    function setBackingInputByIndex(activeItem, index, value) {
+        let inputs = Array.from(activeItem.querySelectorAll('input, textarea, select')).filter(el => el.getAttribute('type') !== 'hidden');
+        if (index < inputs.length) {
+            let el = inputs[index];
+            let tagName = el.tagName.toLowerCase();
+            if (tagName === 'select') {
+                let options = Array.from(el.options);
+                let matched = options.find(opt => opt.text.trim().toLowerCase() === value.trim().toLowerCase() || opt.value === value);
+                if (matched) {
+                    el.value = matched.value;
+                } else {
+                    el.value = value;
+                }
+            } else {
+                el.value = value;
+            }
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.dispatchEvent(new Event('blur', { bubbles: true }));
+            return true;
+        }
+        return false;
+    }
+    return setBackingInputByIndex(arguments[0], arguments[1], arguments[2]);
+    """
+    
+    mathquill_idx = 0
+    input_idx = 0
+    for slot in active_slots:
+        input_id = slot["inputId"]
+        is_dropzone = any(el["isDropzone"] for el in slot["elements"])
+        is_mathquill = any(el["isMathQuill"] for el in slot["elements"])
+        is_dropdown = any(el["isDropdown"] for el in slot["elements"])
+        is_standard = any(el["isStandardInput"] for el in slot["elements"])
+        
+        ans = str(answers[success_count]).strip() if success_count < len(answers) else ""
+        if not ans:
+            if not is_dropzone:
+                input_idx += 1
+            success_count += 1
+            continue
+            
+        log.info("Processing Slot (inputId=%d, inputIdx=%d) -> answer=%s (types: dropzone=%s, mathquill=%s, dropdown=%s, standard=%s)",
+                 input_id, input_idx, repr(ans), is_dropzone, is_mathquill, is_dropdown, is_standard)
+                 
+        action_done = False
+        
+        # Case A: Drag and Drop
+        if is_dropzone:
+            target_norm = normalize_text(ans)
+            selected_draggable = None
+            for d in visible_draggables:
+                txt = driver.execute_script("return arguments[0].innerText || arguments[0].textContent || '';", d).strip()
+                aria_label = d.get_attribute("aria-label") or ""
+                d_norm = normalize_text(txt)
+                aria_norm = normalize_text(aria_label)
+                if (target_norm and d_norm and target_norm in d_norm) or (target_norm and aria_norm and target_norm in aria_norm):
+                    selected_draggable = d
+                    break
+                    
+            if selected_draggable:
+                drop_elements = active_item.find_elements(By.CSS_SELECTOR, f"[data-inputid='{input_id}']")
+                target_dropzone = None
+                for de in drop_elements:
+                    classes = de.get_attribute("class") or ""
+                    if ("lrn_dropzone" in classes or "lrn_assoc_col2" in classes) and "lrn_invisible" not in classes:
+                        target_dropzone = de
+                        break
+                        
+                if target_dropzone:
+                    log.info("Associating draggable option for inputId=%d", input_id)
+                    driver.execute_script("arguments[0].click();", selected_draggable)
+                    time.sleep(0.5)
+                    driver.execute_script("arguments[0].click();", target_dropzone)
+                    time.sleep(0.5)
+                    action_done = True
+                else:
+                    log.warning("Target dropzone not found for inputId %d", input_id)
+            else:
+                log.warning("No matching draggable option found for '%s'", ans)
+                
+        # Case B: MathQuill span
+        elif is_mathquill:
+            if mathquill_idx < len(visible_mq_spans):
+                mq_span = visible_mq_spans[mathquill_idx]
+                mathquill_idx += 1
+                
+                scroll_into_view(driver, mq_span)
+                driver.execute_script("arguments[0].click();", mq_span)
+                time.sleep(0.5)
+                
+                js_write_latex = """
+                function writeLatex(el, latex) {
+                    try {
+                        let elements = [el].concat(Array.from(el.querySelectorAll('*')));
+                        for (let target of elements) {
+                            if (typeof MQ !== 'undefined' && MQ.MathField) {
+                                let mf = MQ.MathField(target);
+                                if (mf) { mf.latex(latex); return true; }
+                            }
+                            if (typeof jQuery !== 'undefined') {
+                                let $el = jQuery(target);
+                                let mq = $el.data('MathQuill');
+                                if (mq && typeof mq.latex === 'function') { mq.latex(latex); return true; }
+                            }
+                        }
+                    } catch(e) {}
+                    return false;
+                }
+                return writeLatex(arguments[0], arguments[1]);
+                """
+                if driver.execute_script(js_write_latex, mq_span, ans):
+                    log.info("Successfully wrote MathQuill via JS: %s", ans)
+                    action_done = True
+                else:
+                    log.info("MathQuill JS API failed. Setting backing input index %d directly...", input_idx)
+                    if driver.execute_script(js_set_backing_input_by_index, active_item, input_idx, ans):
+                        action_done = True
+                    else:
+                        log.info("Backing input index write failed. Typing via keypad...")
+                        enter_math_answer(driver, ans)
+                        action_done = True
+            else:
+                log.warning("No visible MathQuill span found matching index %d", mathquill_idx)
+            input_idx += 1
+                
+        # Case C: Dropdown Select
+        elif is_dropdown:
+            log.info("Setting dropdown select inputIdx=%d to value=%s via JS...", input_idx, ans)
+            if driver.execute_script(js_set_backing_input_by_index, active_item, input_idx, ans):
+                action_done = True
+            else:
+                log.warning("Failed to set dropdown value via JS.")
+            input_idx += 1
+                
+        # Case D: Standard text inputs/textareas
+        elif is_standard:
+            log.info("Setting standard input inputIdx=%d to value=%s via JS...", input_idx, ans)
+            if driver.execute_script(js_set_backing_input_by_index, active_item, input_idx, ans):
+                action_done = True
+            else:
+                log.warning("Failed to set standard input value via JS.")
+            input_idx += 1
+                
+        if action_done:
+            success_count += 1
+            
+    return success_count > 0
+
+
+
 def handle_text_inputs(driver: WebDriver, answer: str) -> bool:
     """Type answer into text input boxes and handle custom keypads if shown."""
     # 1. Look for visible editable math fields or standard inputs
@@ -643,6 +914,8 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
             }
             continue
             
+        active_item = get_active_container(driver, q_no)
+        
         input_success = False
         
         # A. Try MCQ
@@ -653,8 +926,12 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
         elif isinstance(q_answer, list) and handle_matrix(driver, q_answer):
             input_success = True
             
-        # C. Try Text/Keypad
-        elif isinstance(q_answer, str) and handle_text_inputs(driver, q_answer):
+        # B2. Try Cloze / Drag-and-drop (if list of values)
+        elif isinstance(q_answer, list) and handle_cloze_and_drag_drop(driver, q_answer, active_item):
+            input_success = True
+            
+        # C. Try Text/Keypad / Cloze / Drag-and-drop (if single string value)
+        elif isinstance(q_answer, str) and (handle_cloze_and_drag_drop(driver, [q_answer], active_item) or handle_text_inputs(driver, q_answer)):
             input_success = True
             
         if not input_success:
@@ -662,16 +939,38 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
             
         # Submit the answer
         submit_btn = None
-        for tag in ["button", "input", "span"]:
-            for btn in driver.find_elements(By.TAG_NAME, tag):
+        all_btns = []
+        for tag in ["button", "input", "span", "a", "div"]:
+            all_btns.extend(driver.find_elements(By.TAG_NAME, tag))
+            
+        # First try: visible elements with "submit" or "check" in text, value, or class name
+        for btn in all_btns:
+            try:
+                txt = (btn.text or "").strip().lower()
+                val = (btn.get_attribute("value") or "").strip().lower()
+                cls = (btn.get_attribute("class") or "").strip().lower()
+                is_submit = any(w in txt or w in val or w in cls for w in ["submit", "check"])
+                is_checkbox = (btn.get_attribute("type") == "checkbox")
+                if btn.is_displayed() and is_submit and not is_checkbox:
+                    submit_btn = btn
+                    break
+            except Exception:
+                pass
+                
+        # Second try: any element (even if not visible/displayed in viewport) with "submit" or "check"
+        if not submit_btn:
+            for btn in all_btns:
                 try:
-                    if btn.is_displayed() and "submit" in btn.text.strip().lower():
+                    txt = (btn.text or "").strip().lower()
+                    val = (btn.get_attribute("value") or "").strip().lower()
+                    cls = (btn.get_attribute("class") or "").strip().lower()
+                    is_submit = any(w in txt or w in val or w in cls for w in ["submit", "check"])
+                    is_checkbox = (btn.get_attribute("type") == "checkbox")
+                    if is_submit and not is_checkbox:
                         submit_btn = btn
                         break
                 except Exception:
                     pass
-            if submit_btn:
-                break
                 
         if submit_btn:
             log.info("Clicking Submit Answer...")

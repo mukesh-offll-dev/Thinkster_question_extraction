@@ -185,6 +185,7 @@ At the very end of your response, on a new line, you must output exactly one of 
   2. True/False Matrix Tables: Output as a JSON list of strings (e.g., [RESULT: ["True", "False", "True", "False"]]). Use standard capitalization.
   3. Basic Numerical & Text Inputs: Output the exact number or text as a string value (e.g., [RESULT: 90], [RESULT: hello]). Do NOT wrap basic numerical/text inputs in LaTeX delimiters like $.
   4. Advanced Mathematical Expressions (MathQuill / LaTeX): Output in standard LaTeX format (e.g., [RESULT: \frac{3}{4}], [RESULT: x^2], [RESULT: \sqrt{5}], [RESULT: (x+2)(x-3)]). Do NOT wrap the correct answer inside $ or $$ delimiters within the [RESULT: ...] tag.
+  5. Drag-and-Drop Matching & Multiple Fill-in-the-Blank (Cloze) Inputs: Output as a JSON list of strings in the exact order of the blanks/slots from top-to-bottom, left-to-right (e.g., [RESULT: ["2x+6=18, x=6", "2x+2=8, x=3", "2x+2=10, x=4", "3x+2=8, x=2"]] or [RESULT: ["21/5", "6/5", "4", "3/4"]]).
 """
 
 # Global state dictionary for answering tracking metrics
