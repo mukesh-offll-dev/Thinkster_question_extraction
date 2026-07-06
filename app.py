@@ -749,6 +749,111 @@ def serve_logo():
     logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "thinkster_logo.jpg")
     return send_file(logo_path, mimetype="image/jpeg")
 
+def report_not_found_response(worksheet_id):
+    return f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Report Not Found - Thinkster Math Automation</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <style>
+            :root {{
+                --bg: #F9FAFB;
+                --surface: #FFFFFF;
+                --border: #E5E7EB;
+                --text-dark: #111827;
+                --text-muted: #6B7280;
+                --danger: #EF4444;
+            }}
+            body {{
+                font-family: 'Inter', sans-serif;
+                background: var(--bg);
+                color: var(--text-dark);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+                margin: 0;
+                padding: 24px;
+            }}
+            .card {{
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 40px 32px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+                max-width: 480px;
+                text-align: center;
+                animation: fadeIn 0.3s ease;
+            }}
+            @keyframes fadeIn {{
+                from {{ opacity: 0; transform: translateY(10px); }}
+                to {{ opacity: 1; transform: translateY(0); }}
+            }}
+            .icon {{
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 56px;
+                height: 56px;
+                border-radius: 50%;
+                background: #FEE2E2;
+                color: var(--danger);
+                margin-bottom: 20px;
+            }}
+            h1 {{
+                font-size: 20px;
+                font-weight: 700;
+                margin: 0 0 12px 0;
+                letter-spacing: -0.3px;
+            }}
+            p {{
+                font-size: 14px;
+                color: var(--text-muted);
+                line-height: 1.6;
+                margin: 0 0 28px 0;
+            }}
+            .btn {{
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                background: #1F2937;
+                color: #fff;
+                font-weight: 600;
+                font-size: 13px;
+                padding: 10px 24px;
+                border-radius: 8px;
+                text-decoration: none;
+                transition: background 0.15s, transform 0.1s;
+            }}
+            .btn:hover {{
+                background: #111827;
+                transform: translateY(-1px);
+            }}
+            .btn:active {{
+                transform: translateY(0);
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+            </div>
+            <h1>Report Not Found</h1>
+            <p>Worksheet <strong>{worksheet_id}</strong> does not have an AI analysis report in the database. Please run AI analysis for this worksheet first.</p>
+            <a href="/" class="btn">Back to Dashboard</a>
+        </div>
+    </body>
+    </html>
+    """
+
 # Web App HTML Routes
 @app.route("/")
 def index():
@@ -765,14 +870,20 @@ def answering_page():
 
 @app.route("/reports/<worksheet_id>")
 def worksheet_details(worksheet_id):
+    if not collection.find_one({"worksheet_id": worksheet_id}):
+        return report_not_found_response(worksheet_id), 404
     return render_template("worksheet_details.html", worksheet_id=worksheet_id)
 
 @app.route("/reports/answering/<worksheet_id>")
 def answering_worksheet_details(worksheet_id):
+    if not collection.find_one({"worksheet_id": worksheet_id}):
+        return report_not_found_response(worksheet_id), 404
     return render_template("answering_report_details.html", worksheet_id=worksheet_id)
 
 @app.route("/check/<worksheet_id>")
 def check_worksheet(worksheet_id):
+    if not collection.find_one({"worksheet_id": worksheet_id}):
+        return report_not_found_response(worksheet_id), 404
     return render_template("check.html", worksheet_id=worksheet_id)
 
 @app.route("/screenshots/<worksheet_id>/<filename>")
@@ -920,10 +1031,15 @@ def fetch_worksheets():
     try:
         data = request.get_json() or {}
         topic_name = data.get("topic_name", "").strip()
+        filter_reports = data.get("filter_reports", False)
         if not topic_name:
             return jsonify({"error": "Missing topic_name"}), 400
             
         worksheets = get_worksheets_under_topic(topic_name)
+        if filter_reports:
+            reported_ws_ids = set(collection.distinct("worksheet_id"))
+            worksheets = [ws for ws in worksheets if ws.get("id") in reported_ws_ids]
+            
         return jsonify({"status": "success", "worksheets": worksheets})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500

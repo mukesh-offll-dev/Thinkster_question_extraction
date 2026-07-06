@@ -378,7 +378,7 @@
             fetch('/api/fetch_worksheets', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ topic_name: topic })
+                body: JSON.stringify({ topic_name: topic, filter_reports: true })
             })
             .then(res => res.json())
             .then(data => {
