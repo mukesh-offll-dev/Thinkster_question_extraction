@@ -291,6 +291,76 @@ def run_pipeline_in_background(topic_name, worksheet_ids, skip_extraction, insta
             headers={'Authorization': f"Bearer {config.OLLAMA_API_KEY}"}
         )
         
+        screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshots")
+
+        # ----------------------------------------------------------------------
+        # Phase 1: Screenshot Capture
+        # ----------------------------------------------------------------------
+        worksheets_to_extract = []
+        for worksheet_id in chunk:
+            if stop_event.is_set():
+                break
+
+            ws_dir_check = os.path.join(screenshots_dir, worksheet_id)
+            existing_screenshots = []
+            if os.path.isdir(ws_dir_check):
+                existing_screenshots = [
+                    f for f in os.listdir(ws_dir_check)
+                    if f.lower().startswith("question_") and f.lower().endswith(".png")
+                ]
+
+            if not skip_extraction and not existing_screenshots:
+                worksheets_to_extract.append(worksheet_id)
+            else:
+                msg = f"✅ Found {len(existing_screenshots)} existing screenshot(s) for '{worksheet_id}' or skip requested. Skipping extraction."
+                with state_lock:
+                    analysis_state["logs"].append({
+                        "worksheet_id": worksheet_id,
+                        "question_number": 0,
+                        "screenshot_name": "—",
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "ai_response": f"[Instance {thread_idx + 1}] {msg}"
+                    })
+                if existing_screenshots:
+                    try:
+                        os.makedirs(ws_dir_check, exist_ok=True)
+                        with open(os.path.join(ws_dir_check, "topic.txt"), "w", encoding="utf-8") as f:
+                            f.write(topic_name)
+                    except Exception:
+                        pass
+
+        if worksheets_to_extract and not stop_event.is_set():
+            def batch_log_callback(msg, active_ws=None):
+                with state_lock:
+                    if active_ws:
+                        active_ws_per_thread[thread_idx] = active_ws
+                        active_list = [ws for ws in active_ws_per_thread.values() if ws]
+                        analysis_state["current_worksheet_id"] = ", ".join(active_list)
+                    
+                    analysis_state["logs"].append({
+                        "worksheet_id": active_ws or "SYSTEM",
+                        "question_number": 0,
+                        "screenshot_name": "—",
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "ai_response": f"[Instance {thread_idx + 1}] {msg}"
+                    })
+
+            batch_log_callback(f"Starting batch screenshot extraction phase for {worksheets_to_extract}...")
+            try:
+                from main import extract_screenshots_for_worksheets_batch
+                extract_screenshots_for_worksheets_batch(
+                    topic_name=topic_name,
+                    target_ws_ids=worksheets_to_extract,
+                    headless=True,
+                    log_callback=batch_log_callback,
+                    profile_suffix=profile_suffix
+                )
+            except Exception as e:
+                batch_log_callback(f"[ERROR] Exception during batch screenshot extraction: {e}")
+
+        # ----------------------------------------------------------------------
+        # Phase 2: AI Analysis
+        # ----------------------------------------------------------------------
         for ws_idx, worksheet_id in enumerate(chunk):
             if stop_event.is_set():
                 break
@@ -309,49 +379,6 @@ def run_pipeline_in_background(topic_name, worksheet_ids, skip_extraction, insta
                         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "ai_response": f"[Instance {thread_idx + 1}] {msg}"
                     })
-
-            # Step 1: Screenshot Extraction
-            screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshots")
-            ws_dir_check = os.path.join(screenshots_dir, worksheet_id)
-            existing_screenshots = []
-            if os.path.isdir(ws_dir_check):
-                existing_screenshots = [
-                    f for f in os.listdir(ws_dir_check)
-                    if f.lower().startswith("question_") and f.lower().endswith(".png")
-                ]
-
-            local_skip_extraction = skip_extraction
-            if existing_screenshots:
-                log_callback(f"✅ Found {len(existing_screenshots)} existing screenshot(s) for '{worksheet_id}'. Skipping extraction.")
-                local_skip_extraction = True
-
-            if not local_skip_extraction:
-                log_callback(f"Starting screenshot extraction phase for '{worksheet_id}' (headless mode)...")
-                try:
-                    from main import extract_screenshots_for_worksheet
-                    success = extract_screenshots_for_worksheet(
-                        topic_name,
-                        worksheet_id,
-                        headless=True,
-                        log_callback=log_callback,
-                        profile_suffix=profile_suffix
-                    )
-                    if not success:
-                        log_callback(f"[ERROR] Screenshot extraction failed for '{worksheet_id}'. Skipping to next worksheet.")
-                        with state_lock:
-                            analysis_state["completed_worksheets"] += 1
-                            active_ws_per_thread[thread_idx] = ""
-                            update_estimations()
-                        continue
-                except Exception as e:
-                    log_callback(f"[ERROR] Exception during screenshot extraction for '{worksheet_id}': {e}")
-                    with state_lock:
-                        analysis_state["completed_worksheets"] += 1
-                        active_ws_per_thread[thread_idx] = ""
-                        update_estimations()
-                    continue
-            else:
-                log_callback(f"Skipping screenshot extraction phase for '{worksheet_id}'. Using existing images.")
 
             ws_dir = os.path.join(screenshots_dir, worksheet_id)
             if not os.path.exists(ws_dir):
@@ -374,7 +401,7 @@ def run_pipeline_in_background(topic_name, worksheet_ids, skip_extraction, insta
             
             total_q = len(files)
             if total_q == 0:
-                log_callback(f"[ERROR] No screenshots found for worksheet '{worksheet_id}'. Skipping.")
+                log_callback(f"[ERROR] No screenshots found for worksheet '{worksheet_id}'. Skipping AI review.")
                 with state_lock:
                     analysis_state["completed_worksheets"] += 1
                     active_ws_per_thread[thread_idx] = ""
@@ -386,7 +413,6 @@ def run_pipeline_in_background(topic_name, worksheet_ids, skip_extraction, insta
                 analysis_state["report"][worksheet_id] = {}
                 update_estimations()
 
-            # Step 2: AI Analysis
             log_callback(f"Starting AI review and answer generation phase for '{worksheet_id}'...")
             
             def _analyze_single_image(filename):
@@ -1217,12 +1243,21 @@ def get_db_worksheets():
                 }
             },
             {
+                "$lookup": {
+                    "from": config.MONGO_ANSWERS_COLLECTION,
+                    "localField": "_id",
+                    "foreignField": "worksheetID",
+                    "as": "ans_info"
+                }
+            },
+            {
                 "$project": {
                     "worksheet_id": "$_id",
                     "_id": 0,
                     "total_questions": 1,
                     "passed_count": 1,
-                    "issues_count": 1
+                    "issues_count": 1,
+                    "topic_name": {"$ifNull": [{"$arrayElemAt": ["$ans_info.topicName", 0]}, "Unknown Topic"]}
                 }
             },
             {"$sort": {"worksheet_id": 1}}
@@ -1236,8 +1271,15 @@ def get_db_worksheets():
 def get_db_worksheet_details(worksheet_id):
     try:
         docs = list(collection.find({"worksheet_id": worksheet_id}))
+        
+        # Fetch topic name
+        ws_answers_coll = db[config.MONGO_ANSWERS_COLLECTION]
+        ws_ans = ws_answers_coll.find_one({"worksheetID": worksheet_id})
+        topic_name = ws_ans.get("topicName", "Unknown Topic") if ws_ans else "Unknown Topic"
+        
         for d in docs:
             d["_id"] = str(d["_id"])
+            d["topic_name"] = topic_name
         return jsonify(docs)
     except Exception as e:
         return jsonify({"error": str(e)}), 500

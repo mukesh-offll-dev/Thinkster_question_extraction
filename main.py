@@ -512,6 +512,163 @@ def extract_screenshots_for_worksheet(topic_name: str, target_ws_id: str, headle
                 pass
 
 
+
+def extract_screenshots_for_worksheets_batch(topic_name: str, target_ws_ids: list, headless: bool = True, log_callback = None, profile_suffix: Optional[str] = None) -> list:
+    import os
+    original_headless = config.HEADLESS
+    config.HEADLESS = headless
+
+    def log_msg(msg):
+        if log_callback:
+            log_callback(msg)
+        else:
+            print(msg)
+        log.info(msg)
+
+    driver: Optional[WebDriver] = None
+    successful_ws_ids = []
+
+    try:
+        log_msg(f"Launching browser (headless={headless})...")
+        driver = setup_driver_and_navigate(profile_suffix=profile_suffix)
+
+        from topic_worksheet_finder import TopicWorksheetFinder
+        
+        for ws_idx, target_ws_id in enumerate(target_ws_ids):
+            log_msg(f"Processing worksheet [{ws_idx + 1}/{len(target_ws_ids)}]: {target_ws_id}")
+            
+            # Create screenshots directory
+            screenshot_dir = os.path.join("screenshots", target_ws_id)
+            os.makedirs(screenshot_dir, exist_ok=True)
+            
+            try:
+                finder = TopicWorksheetFinder(driver)
+                
+                # Locate the topic element
+                topic_el = finder._find_topic_element(topic_name)
+                if not topic_el:
+                    log_msg(f"[ERROR] Topic '{topic_name}' was not found on the dashboard for worksheet {target_ws_id}.")
+                    continue
+
+                # Check if sidebar
+                is_sidebar = is_sidebar_element(driver, topic_el)
+                if is_sidebar:
+                    log_msg("Topic is sidebar menu item. Clicking to navigate...")
+                    from utils import scroll_into_view, safe_click
+                    scroll_into_view(driver, topic_el)
+                    safe_click(driver, topic_el)
+                    time.sleep(4.0)
+                    topic_container = driver.find_element(By.TAG_NAME, "body")
+                else:
+                    finder._expand_topic(topic_el)
+                    time.sleep(1.5)
+                    try:
+                        topic_container = driver.execute_script("return arguments[0].parentElement;", topic_el)
+                        if not topic_container:
+                            topic_container = topic_el
+                    except Exception:
+                        topic_container = topic_el
+
+                # Expand sub-sections
+                finder._expand_subsections(topic_container)
+                time.sleep(1.5)
+                
+                try:
+                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'instant', block: 'end'});", topic_container)
+                    time.sleep(1.0)
+                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'instant', block: 'start'});", topic_container)
+                    time.sleep(1.0)
+                except Exception:
+                    pass
+                    
+                # Collect cards and parse Worksheet IDs
+                cards = finder._collect_cards(topic_container)
+                ws_ids = []
+                ws_titles = {}
+                for card in cards:
+                    ws_id, ws_title = finder.extract_worksheet_id_and_title(card)
+                    if ws_id:
+                        if ws_id not in ws_ids:
+                            ws_ids.append(ws_id)
+                        ws_titles[ws_id] = ws_title
+
+                if target_ws_id not in ws_ids:
+                    log_msg(f"[ERROR] Worksheet ID '{target_ws_id}' not found under topic '{topic_name}'.")
+                    continue
+
+                ws_title = ws_titles[target_ws_id]
+                log_msg(f"Found target worksheet: {ws_title} ({target_ws_id})")
+
+                # Re-collect cards and find the matching card
+                if is_sidebar:
+                    topic_container = driver.find_element(By.TAG_NAME, "body")
+                else:
+                    try:
+                        topic_container = driver.execute_script("return arguments[0].parentElement;", topic_el)
+                        if not topic_container:
+                            topic_container = topic_el
+                    except Exception:
+                        topic_container = topic_el
+                cards = finder._collect_cards(topic_container)
+                matching_card = None
+                for card in cards:
+                    card_id, _ = finder.extract_worksheet_id_and_title(card)
+                    if card_id == target_ws_id:
+                        matching_card = card
+                        break
+                        
+                if not matching_card:
+                    log_msg(f"[ERROR] Could not find card for Worksheet ID: {target_ws_id}")
+                    continue
+                    
+                # Scroll card into view
+                scroll_into_view(driver, matching_card)
+                time.sleep(0.5)
+                
+                # Click Start or Resume to open the worksheet
+                success = finder._click_start(matching_card, topic_name, ws_title)
+                if not success:
+                    log_msg(f"[ERROR] Failed to open worksheet: {ws_title} ({target_ws_id})")
+                    continue
+                    
+                # Capture screenshots of every question
+                log_msg(f"Opened worksheet {target_ws_id} successfully. Capturing screenshots...")
+                capture_question_screenshots_programmatic(driver, target_ws_id, log_msg)
+                
+                # Exit worksheet
+                exit_success = exit_worksheet(driver)
+                if not exit_success:
+                    log_msg("[WARN] Exit button not clicked successfully. Attempting fallback URL navigation...")
+                    driver.get(config.BASE_URL)
+                    time.sleep(5.0)
+                    
+                log_msg(f"[SUCCESS] Finished capturing screenshots for Worksheet: {target_ws_id}")
+                successful_ws_ids.append(target_ws_id)
+                
+            except Exception as e:
+                log_msg(f"[ERROR] Error during extraction of worksheet {target_ws_id}: {e}")
+                # Try to navigate back to dashboard to recover
+                try:
+                    driver.get(config.BASE_URL)
+                    time.sleep(5.0)
+                except Exception:
+                    pass
+
+    except Exception as exc:
+        log_msg(f"[ERROR] Batch extraction critical error: {exc}")
+
+    finally:
+        config.HEADLESS = original_headless
+        if driver is not None:
+            try:
+                driver.quit()
+                log_msg("Browser closed.")
+            except Exception:
+                pass
+                
+    return successful_ws_ids
+
+
 def capture_question_screenshots_programmatic(driver: WebDriver, worksheet_id: str, log_callback) -> None:
     import os
     screenshot_dir = os.path.join("screenshots", worksheet_id)

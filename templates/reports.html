@@ -361,12 +361,27 @@
                 <input type="checkbox" id="selectAllCheck" onchange="toggleSelectAll()">
                 <label for="selectAllCheck">Select All</label>
             </div>
-            <div class="search-container">
-                <svg class="search-icon" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-                <input type="text" id="searchInput" class="search-input" placeholder="Search by Worksheet ID..." oninput="filterWorksheets()">
+            <div style="display: flex; gap: 12px; align-items: center; flex-grow: 1; justify-content: flex-end;">
+                <!-- Topic Filter Dropdown -->
+                <div class="filter-container" style="position: relative; min-width: 220px; max-width: 320px; width: 100%;">
+                    <select id="topicFilter" class="search-input" style="padding-left: 18px; padding-right: 36px; appearance: none; -webkit-appearance: none; cursor: pointer; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;" onchange="filterWorksheets()">
+                        <option value="all">All Topics</option>
+                    </select>
+                    <!-- Chevron icon for select -->
+                    <div style="position: absolute; right: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text-muted); display: flex; align-items: center;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </div>
+                </div>
+
+                <div class="search-container">
+                    <svg class="search-icon" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input type="text" id="searchInput" class="search-input" placeholder="Search by Worksheet ID..." oninput="filterWorksheets()">
+                </div>
             </div>
         </div>
 
@@ -390,11 +405,44 @@
             setTimeout(() => { toast.classList.remove("show"); }, duration);
         }
 
+        function updateTopicFilterDropdown() {
+            const select = document.getElementById("topicFilter");
+            const currentSelected = select.value;
+            
+            // Clear options but keep the first one ("All Topics")
+            select.innerHTML = '<option value="all">All Topics</option>';
+            
+            const currentData = activeTab === 'analysis' ? worksheetsData : answeringData;
+            const topics = new Set();
+            currentData.forEach(item => {
+                const topic = item.topic_name || item.topicName;
+                if (topic) {
+                    topics.add(topic);
+                }
+            });
+            
+            const sortedTopics = Array.from(topics).sort();
+            sortedTopics.forEach(topic => {
+                const opt = document.createElement("option");
+                opt.value = topic;
+                opt.textContent = topic;
+                select.appendChild(opt);
+            });
+            
+            // Restore selection if it still exists
+            if (sortedTopics.includes(currentSelected)) {
+                select.value = currentSelected;
+            } else {
+                select.value = "all";
+            }
+        }
+
         function switchTab(tab) {
             activeTab = tab;
             document.getElementById("tabAnalysis").classList.toggle("active", tab === 'analysis');
             document.getElementById("tabAnswering").classList.toggle("active", tab === 'answering');
             document.getElementById("searchInput").value = "";
+            document.getElementById("topicFilter").value = "all";
             document.getElementById("selectAllCheck").checked = false;
             
             const batchExport = document.getElementById("batchExportBtn");
@@ -405,11 +453,13 @@
                 batchExport.style.display = "none";
                 batchCardTitle.innerText = "Batch Deletion";
                 batchCardDesc.innerText = "Select automated answering reports to delete them from the database.";
+                updateTopicFilterDropdown();
                 renderAnsweringReports(answeringData);
             } else {
                 batchExport.style.display = "inline-flex";
                 batchCardTitle.innerText = "Batch Operations";
                 batchCardDesc.innerText = "Select worksheets to export a combined PDF report with MathJax math rendering, or delete reviews from the database.";
+                updateTopicFilterDropdown();
                 renderWorksheets(worksheetsData);
             }
             updateSelection();
@@ -422,6 +472,7 @@
                 .then(data => {
                     worksheetsData = data;
                     if (activeTab === 'analysis') {
+                        updateTopicFilterDropdown();
                         renderWorksheets(worksheetsData);
                     }
                 })
@@ -440,6 +491,7 @@
                 .then(data => {
                     answeringData = data;
                     if (activeTab === 'answering') {
+                        updateTopicFilterDropdown();
                         renderAnsweringReports(answeringData);
                     }
                 })
@@ -482,6 +534,9 @@
                                 <polyline points="12 5 19 12 12 19"></polyline>
                             </svg>
                         </div>
+                    </div>
+                    <div style="font-size:12px; color:var(--text-muted); margin-bottom: 8px; padding-left: 29px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                        Topic: <strong style="color:var(--text-dark);">${escapeHtml(ws.topic_name)}</strong>
                     </div>
                     <div class="worksheet-stats" onclick="navigateToDetail('${escapeHtml(ws.worksheet_id)}')">
                         <span class="badge-passed">&#10003; ${ws.passed_count} Passed</span>
@@ -545,13 +600,29 @@
 
         function filterWorksheets() {
             const query = document.getElementById("searchInput").value.trim().toLowerCase();
+            const selectedTopic = document.getElementById("topicFilter").value;
+            
             if (activeTab === 'analysis') {
-                renderWorksheets(worksheetsData.filter(ws => ws.worksheet_id.toLowerCase().includes(query)));
+                let filtered = worksheetsData;
+                if (selectedTopic !== "all") {
+                    filtered = filtered.filter(ws => (ws.topic_name || "").toLowerCase() === selectedTopic.toLowerCase());
+                }
+                if (query) {
+                    filtered = filtered.filter(ws => ws.worksheet_id.toLowerCase().includes(query));
+                }
+                renderWorksheets(filtered);
             } else {
-                renderAnsweringReports(answeringData.filter(ws => 
-                    ws.worksheet_id.toLowerCase().includes(query) || 
-                    (ws.topic_name && ws.topic_name.toLowerCase().includes(query))
-                ));
+                let filtered = answeringData;
+                if (selectedTopic !== "all") {
+                    filtered = filtered.filter(ws => (ws.topic_name || "").toLowerCase() === selectedTopic.toLowerCase());
+                }
+                if (query) {
+                    filtered = filtered.filter(ws => 
+                        ws.worksheet_id.toLowerCase().includes(query) || 
+                        (ws.topic_name && ws.topic_name.toLowerCase().includes(query))
+                    );
+                }
+                renderAnsweringReports(filtered);
             }
         }
 

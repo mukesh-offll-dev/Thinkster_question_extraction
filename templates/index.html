@@ -299,6 +299,35 @@
             flex-shrink: 0;
         }
 
+        .mini-spinner {
+            width: 14px;
+            height: 14px;
+            border-width: 2.2px;
+            border-top-color: var(--primary-light);
+            display: inline-block;
+            margin-left: 6px;
+        }
+
+        .progress-bar-fill.loading {
+            background-image: linear-gradient(
+                45deg,
+                rgba(255, 255, 255, 0.15) 25%,
+                transparent 25%,
+                transparent 50%,
+                rgba(255, 255, 255, 0.15) 50%,
+                rgba(255, 255, 255, 0.15) 75%,
+                transparent 75%,
+                transparent
+            );
+            background-size: 1rem 1rem;
+            animation: progress-bar-stripes 1s linear infinite;
+        }
+
+        @keyframes progress-bar-stripes {
+            from { background-position: 1rem 0; }
+            to { background-position: 0 0; }
+        }
+
         @keyframes spin { to { transform: rotate(360deg); } }
 
         .logs-panel {
@@ -795,18 +824,20 @@
                 <!-- Worksheets Count Card -->
                 <div class="stat-card glass-card">
                     <span class="label">Worksheets</span>
-                    <span class="value">
+                    <span class="value" style="display: flex; align-items: center; gap: 8px;">
                         <span id="worksheetsCount">0</span>
                         <span class="sub-value">/ <span id="totalWorksheets">0</span></span>
+                        <div id="worksheetsSpinner" style="display: none;" class="spinner mini-spinner"></div>
                     </span>
                 </div>
 
                 <!-- Questions Count Card -->
                 <div class="stat-card glass-card">
                     <span class="label">Questions</span>
-                    <span class="value">
+                    <span class="value" style="display: flex; align-items: center; gap: 8px;">
                         <span id="questionsCount">0</span>
                         <span class="sub-value">/ <span id="totalQuestions">0</span></span>
+                        <div id="questionsSpinner" style="display: none;" class="spinner mini-spinner"></div>
                     </span>
                 </div>
 
@@ -1230,6 +1261,13 @@
                         document.getElementById("stopBtn").style.display  = "none";
                         document.getElementById("startBtn").style.display = "inline-flex";
                         document.getElementById("startBtn").disabled = false;
+                    } else {
+                        // status is "Processing"
+                        document.getElementById("stopBtn").style.display  = "inline-flex";
+                        document.getElementById("startBtn").style.display = "none";
+                        if (!pollingInterval) {
+                            pollingInterval = setInterval(pollStatus, 800);
+                        }
                     }
                 })
                 .catch(err => console.error("Polling failed:", err));
@@ -1239,10 +1277,22 @@
             const statusEl = document.getElementById("statusText");
             statusEl.className = "status-badge";
             statusEl.innerText = state.status;
-            if      (state.status === "Processing") { statusEl.classList.add("status-processing"); document.getElementById("processingSpinner").style.display = "inline-block"; }
-            else if (state.status === "Completed")  { statusEl.classList.add("status-completed");  document.getElementById("processingSpinner").style.display = "none"; }
-            else if (state.status === "Stopped")    { statusEl.classList.add("status-stopped");    document.getElementById("processingSpinner").style.display = "none"; }
-            else                                     { statusEl.classList.add("status-waiting");    document.getElementById("processingSpinner").style.display = "none"; }
+            if (state.status === "Processing") {
+                statusEl.classList.add("status-processing");
+                document.getElementById("processingSpinner").style.display = "inline-block";
+                document.getElementById("worksheetsSpinner").style.display = "inline-block";
+                document.getElementById("questionsSpinner").style.display = "inline-block";
+                document.getElementById("progressBar").classList.add("loading");
+            } else {
+                if (state.status === "Completed")  { statusEl.classList.add("status-completed"); }
+                else if (state.status === "Stopped")    { statusEl.classList.add("status-stopped"); }
+                else                                     { statusEl.classList.add("status-waiting"); }
+                
+                document.getElementById("processingSpinner").style.display = "none";
+                document.getElementById("worksheetsSpinner").style.display = "none";
+                document.getElementById("questionsSpinner").style.display = "none";
+                document.getElementById("progressBar").classList.remove("loading");
+            }
 
             // Update numerical values
             document.getElementById("totalWorksheets").innerText = state.total_worksheets;

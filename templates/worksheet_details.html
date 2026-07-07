@@ -241,6 +241,7 @@
             <div class="detail-title-block">
                 <h2>Worksheet: <span id="wsIdTitle">-</span></h2>
                 <div class="detail-meta-text">
+                    <span>Topic: <strong id="topicNameTitle">-</strong></span>
                     <span>Analysis Date: <strong id="analysisTime">-</strong></span>
                     <span>Total Questions: <strong id="totalQ">-</strong></span>
                     <span>Issues Found: <strong id="issuesCount" style="color: var(--danger);">0</strong></span>
@@ -283,6 +284,7 @@
                 return;
             }
 
+            document.getElementById("topicNameTitle").innerText = questions[0].topic_name || "Unknown Topic";
             document.getElementById("analysisTime").innerText = questions[0].analysis_time || "-";
             document.getElementById("totalQ").innerText = questions.length;
             document.getElementById("issuesCount").innerText = questions.filter(q => q.status === "Issue").length;
