@@ -821,7 +821,7 @@ def run_answering_for_worksheet(topic_name: str, target_ws_id: str, headless: bo
                 pass
 
 
-def run_answering_for_worksheets(topic_name: str, target_ws_ids: list[str], headless: bool = False, log_callback = None, state_updater = None) -> bool:
+def run_answering_for_worksheets(topic_name: str, target_ws_ids: list[str], headless: bool = False, log_callback = None, state_updater = None, profile_suffix: Optional[str] = None) -> bool:
     import os
     original_headless = config.HEADLESS
     config.HEADLESS = headless
@@ -864,7 +864,7 @@ def run_answering_for_worksheets(topic_name: str, target_ws_ids: list[str], head
 
     try:
         log_msg(f"Launching browser (headless={headless})...")
-        driver = setup_driver_and_navigate()
+        driver = setup_driver_and_navigate(profile_suffix=profile_suffix)
 
         from topic_worksheet_finder import TopicWorksheetFinder
         finder = TopicWorksheetFinder(driver)

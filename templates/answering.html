@@ -225,7 +225,7 @@
                     <span id="statusPill" class="status-pill idle">Idle</span>
                 </div>
                 <div class="card-body">
-                    <div class="form-grid" style="grid-template-columns: 1fr;">
+                    <div class="form-grid" style="grid-template-columns: 3fr 1.2fr; gap: 16px;">
                         <div class="form-group">
                             <label for="topicSelect">Topic Name</label>
                             <select id="topicSelect" onchange="toggleManual(); onTopicChange();">
@@ -241,6 +241,15 @@
                                 <option value="__manual__">Enter manually…</option>
                             </select>
                             <input id="topicManual" type="text" placeholder="Type topic name…" style="display:none; margin-top:8px;">
+                        </div>
+                        <div class="form-group">
+                            <label for="instancesCount">Instances</label>
+                            <select id="instancesCount">
+                                <option value="1">1 instance</option>
+                                <option value="2">2 instances</option>
+                                <option value="3">3 instances</option>
+                                <option value="4" selected>4 instances</option>
+                            </select>
                         </div>
                     </div>
                     <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 15px;">
@@ -324,6 +333,8 @@
                         <li><span class="lbl">Current Worksheet</span><span class="val" id="siCurrentWs">—</span></li>
                         <li><span class="lbl">Remaining</span><span class="val" id="siRemaining">—</span></li>
                         <li><span class="lbl">Start Time</span><span class="val" id="siStart">—</span></li>
+                        <li><span class="lbl">Est. Total Time</span><span class="val" id="siEstTotal">—</span></li>
+                        <li><span class="lbl">Est. Remaining</span><span class="val" id="siEstRemaining" style="color: var(--warning);">—</span></li>
                     </ul>
                     <div style="margin-top: 15px; border-top: 1px solid var(--border); padding-top: 15px;">
                         <span class="lbl" style="font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);">Overall Progress</span>
@@ -541,10 +552,12 @@
                 return;
             }
 
+            const instancesCount = document.getElementById("instancesCount").value;
+
             fetch('/api/run_answering', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ worksheet_ids: wsIds, topic_name: topic, headless })
+                body: JSON.stringify({ worksheet_ids: wsIds, topic_name: topic, headless, instances_count: instancesCount })
             })
             .then(r => r.json())
             .then(data => {
@@ -611,6 +624,22 @@
                 const pct = Math.round(state.percent_complete || 0);
                 document.getElementById('siProgressVal').textContent = `${pct}%`;
                 document.getElementById('siProgressBar').style.width = `${pct}%`;
+                
+                // Format estimated times
+                if (state.estimated_total_time > 0) {
+                    const estTotMin = Math.floor(state.estimated_total_time / 60);
+                    const estTotSec = Math.floor(state.estimated_total_time % 60);
+                    document.getElementById('siEstTotal').textContent = `${estTotMin}m ${estTotSec}s`;
+                } else {
+                    document.getElementById('siEstTotal').textContent = '—';
+                }
+                if (state.estimated_remaining_time > 0 && state.status === 'Processing') {
+                    const estRemMin = Math.floor(state.estimated_remaining_time / 60);
+                    const estRemSec = Math.floor(state.estimated_remaining_time % 60);
+                    document.getElementById('siEstRemaining').textContent = `${estRemMin}m ${estRemSec}s`;
+                } else {
+                    document.getElementById('siEstRemaining').textContent = '—';
+                }
             } else {
                 document.getElementById('siSelectedWs').textContent = '—';
                 document.getElementById('siCompleted').textContent = '—';
@@ -618,6 +647,8 @@
                 document.getElementById('siRemaining').textContent = '—';
                 document.getElementById('siProgressVal').textContent = '0%';
                 document.getElementById('siProgressBar').style.width = '0%';
+                document.getElementById('siEstTotal').textContent = '—';
+                document.getElementById('siEstRemaining').textContent = '—';
             }
         }
 

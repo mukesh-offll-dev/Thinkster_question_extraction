@@ -3,4 +3,7 @@ __pycache__/
 screenshots/
 logs/
 chrome_profile/
-.env
+chrome_profile_1/
+chrome_profile_2/
+chrome_profile_3/
+.env

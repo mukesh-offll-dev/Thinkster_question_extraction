@@ -710,10 +710,10 @@
                 <h3 style="font-size: 13px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.8px; border-bottom: 2px solid var(--border); padding-bottom: 8px; margin-bottom: 5px;">
                     Pipeline Configuration
                 </h3>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div style="display: grid; grid-template-columns: 2fr 2fr 1.2fr; gap: 20px;">
                     <div style="display: flex; flex-direction: column; gap: 6px;">
                         <label for="pipelineTopic" style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Topic Name</label>
-                        <select id="pipelineTopic" onchange="toggleManualTopic(); onTopicChange();" style="font-family: inherit; font-size: 13px; padding: 9px 12px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-dark); outline: none; transition: border-color 0.2s;">
+                        <select id="pipelineTopic" onchange="toggleManualTopic(); onTopicChange();" style="font-family: inherit; font-size: 13px; padding: 9px 12px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-dark); outline: none; transition: border-color 0.2s; width: 100%;">
                             <option value="Complex Numbers">Complex Numbers</option>
                             <option value="Algebra 2 Foundations">Algebra 2 Foundations</option>
                             <option value="Number Representation">Number Representation</option>
@@ -730,6 +730,15 @@
                     <div style="display: flex; flex-direction: column; gap: 6px;">
                         <label for="pipelineWorksheetId" style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Worksheet ID (Manual Optional)</label>
                         <input id="pipelineWorksheetId" placeholder="e.g. AQCONAL202" style="font-family: inherit; font-size: 13px; padding: 9px 12px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-dark); outline: none; transition: border-color 0.2s; width: 100%;" />
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <label for="instancesCount" style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Instances</label>
+                        <select id="instancesCount" style="font-family: inherit; font-size: 13px; padding: 9px 12px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-dark); outline: none; transition: border-color 0.2s; width: 100%;">
+                            <option value="1">1 instance</option>
+                            <option value="2">2 instances</option>
+                            <option value="3">3 instances</option>
+                            <option value="4" selected>4 instances</option>
+                        </select>
                     </div>
                 </div>
                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 5px;">
@@ -867,6 +876,14 @@
                     <li>
                         <span class="lbl">Elapsed Time</span>
                         <span id="sidebarElapsed" class="val">-</span>
+                    </li>
+                    <li>
+                        <span class="lbl">Est. Total Time</span>
+                        <span id="sidebarEstTotal" class="val">-</span>
+                    </li>
+                    <li>
+                        <span class="lbl">Est. Remaining</span>
+                        <span id="sidebarEstRemaining" class="val" style="color: var(--warning);">-</span>
                     </li>
                 </ul>
             </div>
@@ -1111,6 +1128,7 @@
                 topicName = document.getElementById("pipelineTopicManual").value.trim();
             }
             const skipExtraction = document.getElementById("skipExtraction").checked;
+            const instancesCount = document.getElementById("instancesCount").value;
 
             // Gather selected worksheets
             let wsIds = [];
@@ -1145,7 +1163,8 @@
                 body: JSON.stringify({
                     topic_name: topicName,
                     worksheet_ids: wsIds,
-                    skip_extraction: skipExtraction
+                    skip_extraction: skipExtraction,
+                    instances_count: instancesCount
                 })
             })
             .then(res => res.json())
@@ -1259,6 +1278,22 @@
                 document.getElementById("sidebarElapsed").innerText = `${minutes}m ${seconds}s`;
             } else {
                 document.getElementById("sidebarElapsed").innerText = "-";
+            }
+
+            // Estimated time formatting
+            if (state.estimated_total_time > 0) {
+                const estTotMin = Math.floor(state.estimated_total_time / 60);
+                const estTotSec = Math.floor(state.estimated_total_time % 60);
+                document.getElementById("sidebarEstTotal").innerText = `${estTotMin}m ${estTotSec}s`;
+            } else {
+                document.getElementById("sidebarEstTotal").innerText = "-";
+            }
+            if (state.estimated_remaining_time > 0 && state.status === "Processing") {
+                const estRemMin = Math.floor(state.estimated_remaining_time / 60);
+                const estRemSec = Math.floor(state.estimated_remaining_time % 60);
+                document.getElementById("sidebarEstRemaining").innerText = `${estRemMin}m ${estRemSec}s`;
+            } else {
+                document.getElementById("sidebarEstRemaining").innerText = "-";
             }
 
             // Stream new logs

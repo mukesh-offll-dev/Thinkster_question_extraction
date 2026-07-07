@@ -369,7 +369,7 @@ def capture_question_screenshots(driver: WebDriver, worksheet_id: str) -> None:
 
 
 
-def extract_screenshots_for_worksheet(topic_name: str, target_ws_id: str, headless: bool = True, log_callback = None) -> bool:
+def extract_screenshots_for_worksheet(topic_name: str, target_ws_id: str, headless: bool = True, log_callback = None, profile_suffix: Optional[str] = None) -> bool:
     import os
     original_headless = config.HEADLESS
     config.HEADLESS = headless
@@ -385,7 +385,7 @@ def extract_screenshots_for_worksheet(topic_name: str, target_ws_id: str, headle
 
     try:
         log_msg(f"Launching browser (headless={headless})...")
-        driver = setup_driver_and_navigate()
+        driver = setup_driver_and_navigate(profile_suffix=profile_suffix)
 
         log_msg(f"Searching for topic: {topic_name}")
         from topic_worksheet_finder import TopicWorksheetFinder

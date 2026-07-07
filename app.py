@@ -1,4 +1,5 @@
 import os
+import time
 import re
 import sys
 import io
@@ -54,7 +55,10 @@ analysis_state = {
     "total_passed": 0,
     "start_time": None,
     "end_time": None,
-    "execution_time_seconds": 0.0
+    "execution_time_seconds": 0.0,
+    "instances_count": 1,
+    "estimated_total_time": 0.0,
+    "estimated_remaining_time": 0.0
 }
 
 def get_question_number(filename):
@@ -199,15 +203,35 @@ answering_state = {
     "current_worksheet_idx": 0,
     "remaining_worksheets": 0,
     "percent_complete": 0.0,
-    "start_time": None
+    "start_time": None,
+    "instances_count": 1,
+    "estimated_total_time": 0.0,
+    "estimated_remaining_time": 0.0
 }
 
-def run_pipeline_in_background(topic_name, worksheet_ids, skip_extraction):
+def run_pipeline_in_background(topic_name, worksheet_ids, skip_extraction, instances_count=1):
     global analysis_state
     stop_event.clear()
     
     start_dt = datetime.now()
     total_ws = len(worksheet_ids)
+    
+    # Restrict instances_count between 1 and 4
+    instances_count = max(1, min(4, int(instances_count)))
+    
+    # Split worksheet IDs into chunks
+    chunk_size = (total_ws + instances_count - 1) // instances_count
+    chunks = [worksheet_ids[i:i + chunk_size] for i in range(0, total_ws, chunk_size)]
+    while len(chunks) < instances_count:
+        chunks.append([])
+        
+    # Initial estimate calculations
+    # Average time: extraction ~45s per worksheet, AI analysis ~8s per question
+    # Assume 5 questions per worksheet on average initially
+    est_extraction = (total_ws * 45.0) / instances_count if not skip_extraction else 0.0
+    est_ai = ((total_ws * 5) * 8.0) / (instances_count * 3.0)
+    est_total = est_extraction + est_ai
+    
     with state_lock:
         analysis_state["status"] = "Processing"
         analysis_state["start_time"] = start_dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -225,210 +249,276 @@ def run_pipeline_in_background(topic_name, worksheet_ids, skip_extraction):
         analysis_state["total_issues"] = 0
         analysis_state["total_passed"] = 0
         analysis_state["execution_time_seconds"] = 0.0
+        analysis_state["instances_count"] = instances_count
+        analysis_state["estimated_total_time"] = est_total
+        analysis_state["estimated_remaining_time"] = est_total
 
-    for ws_idx, worksheet_id in enumerate(worksheet_ids):
-        if stop_event.is_set():
-            break
-            
-        with state_lock:
-            analysis_state["current_worksheet_id"] = worksheet_id
-            analysis_state["remaining_worksheets"] = total_ws - ws_idx
+    active_ws_per_thread = {}
 
-        def log_callback(msg, q_num=0):
-            with state_lock:
-                analysis_state["logs"].append({
-                    "worksheet_id": worksheet_id,
-                    "question_number": q_num,
-                    "screenshot_name": f"Question_{q_num}.png" if q_num > 0 else "—",
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "ai_response": msg
-                })
-
-        # Step 1: Screenshot Extraction
-        screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshots")
-        ws_dir_check = os.path.join(screenshots_dir, worksheet_id)
-        existing_screenshots = []
-        if os.path.isdir(ws_dir_check):
-            existing_screenshots = [
-                f for f in os.listdir(ws_dir_check)
-                if f.lower().startswith("question_") and f.lower().endswith(".png")
-            ]
-
-        local_skip_extraction = skip_extraction
-        if existing_screenshots:
-            log_callback(f"✅ Found {len(existing_screenshots)} existing screenshot(s) for '{worksheet_id}'. Skipping extraction.")
-            local_skip_extraction = True
-
-        if not local_skip_extraction:
-            log_callback(f"Starting screenshot extraction phase for '{worksheet_id}' (headless mode)...")
-            try:
-                from main import extract_screenshots_for_worksheet
-                success = extract_screenshots_for_worksheet(topic_name, worksheet_id, headless=True, log_callback=log_callback)
-                if not success:
-                    log_callback(f"[ERROR] Screenshot extraction failed for '{worksheet_id}'. Skipping to next worksheet.")
-                    with state_lock:
-                        analysis_state["completed_worksheets"] += 1
-                    continue
-            except Exception as e:
-                log_callback(f"[ERROR] Exception during screenshot extraction for '{worksheet_id}': {e}")
-                with state_lock:
-                    analysis_state["completed_worksheets"] += 1
-                continue
+    def update_estimations():
+        w_total = analysis_state["total_worksheets"]
+        w_completed = analysis_state["completed_worksheets"]
+        w_remaining = max(0, w_total - w_completed)
+        
+        q_total = analysis_state["total_questions"]
+        q_completed = analysis_state["completed_questions"]
+        
+        if q_total == 0:
+            q_remaining = w_remaining * 5
         else:
-            log_callback(f"Skipping screenshot extraction phase for '{worksheet_id}'. Using existing images.")
-
-        ws_dir = os.path.join(screenshots_dir, worksheet_id)
-        if not os.path.exists(ws_dir):
-            log_callback(f"[ERROR] Screenshots directory for worksheet '{worksheet_id}' does not exist: {ws_dir}")
-            with state_lock:
-                analysis_state["completed_worksheets"] += 1
-            continue
-
-        try:
-            with open(os.path.join(ws_dir, "topic.txt"), "w", encoding="utf-8") as f:
-                f.write(topic_name)
-        except Exception as e:
-            log_callback(f"[WARN] Failed to write topic.txt: {e}")
-
-        # Find screenshots
-        files = [f for f in os.listdir(ws_dir) if f.lower().startswith("question_") and f.lower().endswith(".png")]
-        files.sort(key=get_question_number)
+            q_remaining = max(0, q_total - q_completed)
+            
+        inst = analysis_state.get("instances_count", 1)
         
-        total_q = len(files)
-        if total_q == 0:
-            log_callback(f"[ERROR] No screenshots found for worksheet '{worksheet_id}'. Skipping.")
-            with state_lock:
-                analysis_state["completed_worksheets"] += 1
-            continue
+        if skip_extraction:
+            ext_rem = 0.0
+        else:
+            ext_rem = (w_remaining * 45.0) / inst
+            
+        ai_rem = (q_remaining * 8.0) / (inst * 3.0)
+        analysis_state["estimated_remaining_time"] = ext_rem + ai_rem
 
-        with state_lock:
-            analysis_state["total_questions"] += total_q
-            analysis_state["report"][worksheet_id] = {}
-
-        # Step 2: AI Analysis
-        log_callback(f"Starting AI review and answer generation phase for '{worksheet_id}'...")
+    def run_worker(thread_idx, chunk):
+        profile_suffix = None if thread_idx == 0 else str(thread_idx)
         
+        # Stagger startups by 7 seconds
+        if thread_idx > 0:
+            time.sleep(thread_idx * 7)
+            
         MODEL_NAME = config.AI_MODEL
         client = Client(
             host=config.OLLAMA_BASE_URL,
             headers={'Authorization': f"Bearer {config.OLLAMA_API_KEY}"}
         )
         
-        completed_q_count = 0
-        def _analyze_single_image(filename):
-            nonlocal completed_q_count
+        for ws_idx, worksheet_id in enumerate(chunk):
             if stop_event.is_set():
-                return
-
-            q_num = get_question_number(filename)
+                break
+                
             with state_lock:
-                analysis_state["current_question_number"] = q_num
+                active_ws_per_thread[thread_idx] = worksheet_id
+                active_list = [ws for ws in active_ws_per_thread.values() if ws]
+                analysis_state["current_worksheet_id"] = ", ".join(active_list)
+                
+            def log_callback(msg, q_num=0):
+                with state_lock:
+                    analysis_state["logs"].append({
+                        "worksheet_id": worksheet_id,
+                        "question_number": q_num,
+                        "screenshot_name": f"Question_{q_num}.png" if q_num > 0 else "—",
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "ai_response": f"[Instance {thread_idx + 1}] {msg}"
+                    })
 
-            img_path = os.path.join(ws_dir, filename)
+            # Step 1: Screenshot Extraction
+            screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshots")
+            ws_dir_check = os.path.join(screenshots_dir, worksheet_id)
+            existing_screenshots = []
+            if os.path.isdir(ws_dir_check):
+                existing_screenshots = [
+                    f for f in os.listdir(ws_dir_check)
+                    if f.lower().startswith("question_") and f.lower().endswith(".png")
+                ]
 
-            attempt = 0
-            retry_delay = 10
-            while True:
-                attempt += 1
+            local_skip_extraction = skip_extraction
+            if existing_screenshots:
+                log_callback(f"✅ Found {len(existing_screenshots)} existing screenshot(s) for '{worksheet_id}'. Skipping extraction.")
+                local_skip_extraction = True
+
+            if not local_skip_extraction:
+                log_callback(f"Starting screenshot extraction phase for '{worksheet_id}' (headless mode)...")
                 try:
-                    response = client.chat(
-                        model=MODEL_NAME,
-                        messages=[
-                            {
-                                "role": "user",
-                                "content": prompt,
-                                "images": [img_path]
-                            }
-                        ]
+                    from main import extract_screenshots_for_worksheet
+                    success = extract_screenshots_for_worksheet(
+                        topic_name,
+                        worksheet_id,
+                        headless=True,
+                        log_callback=log_callback,
+                        profile_suffix=profile_suffix
                     )
-                    if response and "message" in response and "content" in response["message"]:
-                        ai_text = response["message"]["content"]
-                    break
+                    if not success:
+                        log_callback(f"[ERROR] Screenshot extraction failed for '{worksheet_id}'. Skipping to next worksheet.")
+                        with state_lock:
+                            analysis_state["completed_worksheets"] += 1
+                            active_ws_per_thread[thread_idx] = ""
+                            update_estimations()
+                        continue
                 except Exception as e:
-                    err_msg = str(e)
-                    is_permanent = "SAFETY" in err_msg or "safety" in err_msg.lower() or "INVALID_ARGUMENT" in err_msg
-                    if is_permanent:
-                        if "SAFETY" in err_msg or "safety" in err_msg.lower():
-                            ai_text = "❌ Model refused to process this image due to safety filters."
-                        else:
-                            ai_text = f"❌ Model error: {err_msg.splitlines()[0][:180]}"
-                        break
-                    
-                    is_rate_limit = "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "quota" in err_msg.lower() or "limit" in err_msg.lower()
-                    is_connection = "connection" in err_msg.lower() or "reach" in err_msg.lower() or "failed to connect" in err_msg.lower() or "disconnected" in err_msg.lower() or "socket" in err_msg.lower()
-                    is_busy = "busy" in err_msg.lower() or "overloaded" in err_msg.lower() or "503" in err_msg or "unavailable" in err_msg.lower()
-                    
-                    if is_rate_limit:
-                        status_msg = "⏳ AI server is busy. Retrying..."
-                    elif is_connection:
-                        status_msg = "⏳ Connection lost. Retrying..."
-                    elif is_busy:
-                        status_msg = "⏳ Waiting for the AI model to become available..."
-                    else:
-                        status_msg = "⏳ Waiting for AI response..."
-                    
-                    log_callback(status_msg, q_num)
-                    time.sleep(retry_delay)
+                    log_callback(f"[ERROR] Exception during screenshot extraction for '{worksheet_id}': {e}")
+                    with state_lock:
+                        analysis_state["completed_worksheets"] += 1
+                        active_ws_per_thread[thread_idx] = ""
+                        update_estimations()
+                    continue
+            else:
+                log_callback(f"Skipping screenshot extraction phase for '{worksheet_id}'. Using existing images.")
 
-            is_issue = "Issue:" in ai_text or ai_text.startswith("❌")
-            analysis_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            ws_dir = os.path.join(screenshots_dir, worksheet_id)
+            if not os.path.exists(ws_dir):
+                log_callback(f"[ERROR] Screenshots directory for worksheet '{worksheet_id}' does not exist: {ws_dir}")
+                with state_lock:
+                    analysis_state["completed_worksheets"] += 1
+                    active_ws_per_thread[thread_idx] = ""
+                    update_estimations()
+                continue
 
-            if not ai_text.startswith("❌"):
-                doc = {
-                    "worksheet_id": worksheet_id,
-                    "question_number": q_num,
-                    "image_name": filename,
-                    "ai_response": ai_text,
-                    "analysis_time": analysis_time_str,
-                    "status": "Issue" if "Issue:" in ai_text else "Passed",
-                    "created_timestamp": datetime.now()
-                }
-                try:
-                    collection.insert_one(doc)
-                except Exception as e:
-                    print(f"Failed to write to MongoDB: {e}")
+            try:
+                with open(os.path.join(ws_dir, "topic.txt"), "w", encoding="utf-8") as f:
+                    f.write(topic_name)
+            except Exception as e:
+                log_callback(f"[WARN] Failed to write topic.txt: {e}")
+
+            # Find screenshots
+            files = [f for f in os.listdir(ws_dir) if f.lower().startswith("question_") and f.lower().endswith(".png")]
+            files.sort(key=get_question_number)
+            
+            total_q = len(files)
+            if total_q == 0:
+                log_callback(f"[ERROR] No screenshots found for worksheet '{worksheet_id}'. Skipping.")
+                with state_lock:
+                    analysis_state["completed_worksheets"] += 1
+                    active_ws_per_thread[thread_idx] = ""
+                    update_estimations()
+                continue
 
             with state_lock:
-                if is_issue:
-                    analysis_state["total_issues"] += 1
-                else:
-                    analysis_state["total_passed"] += 1
+                analysis_state["total_questions"] += total_q
+                analysis_state["report"][worksheet_id] = {}
+                update_estimations()
 
-                analysis_state["report"][worksheet_id][f"Q{q_num}"] = ai_text
-                completed_q_count += 1
-                analysis_state["completed_questions"] += 1
-                if analysis_state["total_questions"] > 0:
-                    analysis_state["percent_complete"] = (analysis_state["completed_questions"] / analysis_state["total_questions"]) * 100.0
-
-                analysis_state["logs"].append({
-                    "worksheet_id": worksheet_id,
-                    "question_number": q_num,
-                    "screenshot_name": filename,
-                    "timestamp": analysis_time_str,
-                    "ai_response": ai_text
-                })
-
-        # Process up to 3 images concurrently
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            futures = {executor.submit(_analyze_single_image, fn): fn for fn in files}
-            for future in as_completed(futures):
+            # Step 2: AI Analysis
+            log_callback(f"Starting AI review and answer generation phase for '{worksheet_id}'...")
+            
+            def _analyze_single_image(filename):
                 if stop_event.is_set():
-                    with state_lock:
-                        analysis_state["status"] = "Stopped"
-                        analysis_state["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        analysis_state["execution_time_seconds"] = (datetime.now() - start_dt).total_seconds()
-                    executor.shutdown(wait=False, cancel_futures=True)
                     return
-                try:
-                    future.result()
-                except Exception as exc:
-                    log_callback(f"❌ Unexpected error processing image: {exc}")
 
-        save_ws_answers(worksheet_id)
+                q_num = get_question_number(filename)
+                with state_lock:
+                    analysis_state["current_question_number"] = q_num
 
-        with state_lock:
-            analysis_state["completed_worksheets"] += 1
+                img_path = os.path.join(ws_dir, filename)
+
+                attempt = 0
+                retry_delay = 10
+                ai_text = ""
+                while True:
+                    attempt += 1
+                    try:
+                        response = client.chat(
+                            model=MODEL_NAME,
+                            messages=[
+                                {
+                                    "role": "user",
+                                    "content": prompt,
+                                    "images": [img_path]
+                                }
+                            ]
+                        )
+                        if response and "message" in response and "content" in response["message"]:
+                            ai_text = response["message"]["content"]
+                        break
+                    except Exception as e:
+                        err_msg = str(e)
+                        is_permanent = "SAFETY" in err_msg or "safety" in err_msg.lower() or "INVALID_ARGUMENT" in err_msg
+                        if is_permanent:
+                            if "SAFETY" in err_msg or "safety" in err_msg.lower():
+                                ai_text = "❌ Model refused to process this image due to safety filters."
+                            else:
+                                ai_text = f"❌ Model error: {err_msg.splitlines()[0][:180]}"
+                            break
+                        
+                        is_rate_limit = "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "quota" in err_msg.lower() or "limit" in err_msg.lower()
+                        is_connection = "connection" in err_msg.lower() or "reach" in err_msg.lower() or "failed to connect" in err_msg.lower() or "disconnected" in err_msg.lower() or "socket" in err_msg.lower()
+                        is_busy = "busy" in err_msg.lower() or "overloaded" in err_msg.lower() or "503" in err_msg or "unavailable" in err_msg.lower()
+                        
+                        if is_rate_limit:
+                            status_msg = "⏳ AI server is busy. Retrying..."
+                        elif is_connection:
+                            status_msg = "⏳ Connection lost. Retrying..."
+                        elif is_busy:
+                            status_msg = "⏳ Waiting for the AI model to become available..."
+                        else:
+                            status_msg = "⏳ Waiting for AI response..."
+                        
+                        log_callback(status_msg, q_num)
+                        time.sleep(retry_delay)
+
+                is_issue = "Issue:" in ai_text or ai_text.startswith("❌")
+                analysis_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                if not ai_text.startswith("❌"):
+                    doc = {
+                        "worksheet_id": worksheet_id,
+                        "question_number": q_num,
+                        "image_name": filename,
+                        "ai_response": ai_text,
+                        "analysis_time": analysis_time_str,
+                        "status": "Issue" if "Issue:" in ai_text else "Passed",
+                    }
+                    try:
+                        collection.update_one(
+                            {"worksheet_id": worksheet_id, "question_number": q_num},
+                            {"$set": doc, "$setOnInsert": {"created_timestamp": datetime.now()}},
+                            upsert=True
+                        )
+                    except Exception as e:
+                        print(f"Failed to write to MongoDB: {e}")
+
+                with state_lock:
+                    if is_issue:
+                        analysis_state["total_issues"] += 1
+                    else:
+                        analysis_state["total_passed"] += 1
+
+                    analysis_state["report"][worksheet_id][f"Q{q_num}"] = ai_text
+                    analysis_state["completed_questions"] += 1
+                    if analysis_state["total_questions"] > 0:
+                        analysis_state["percent_complete"] = (analysis_state["completed_questions"] / analysis_state["total_questions"]) * 100.0
+
+                    analysis_state["logs"].append({
+                        "worksheet_id": worksheet_id,
+                        "question_number": q_num,
+                        "screenshot_name": filename,
+                        "timestamp": analysis_time_str,
+                        "ai_response": f"[Instance {thread_idx + 1}] {ai_text}"
+                    })
+                    update_estimations()
+
+            # Process up to 3 images concurrently
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                futures = {executor.submit(_analyze_single_image, fn): fn for fn in files}
+                for future in as_completed(futures):
+                    if stop_event.is_set():
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        return
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        log_callback(f"❌ Unexpected error processing image: {exc}")
+
+            save_ws_answers(worksheet_id)
+
+            with state_lock:
+                analysis_state["completed_worksheets"] += 1
+                active_ws_per_thread[thread_idx] = ""
+                update_estimations()
+
+    # Spawn worker threads
+    import threading
+    worker_threads = []
+    for idx in range(instances_count):
+        chunk = chunks[idx]
+        if not chunk:
+            continue
+        t = threading.Thread(target=run_worker, args=(idx, chunk))
+        t.daemon = True
+        t.start()
+        worker_threads.append(t)
+        
+    for t in worker_threads:
+        t.join()
 
     end_dt = datetime.now()
     execution_time = (end_dt - start_dt).total_seconds()
@@ -439,25 +529,44 @@ def run_pipeline_in_background(topic_name, worksheet_ids, skip_extraction):
         else:
             analysis_state["status"] = "Completed"
             analysis_state["percent_complete"] = 100.0
+            analysis_state["estimated_remaining_time"] = 0.0
         analysis_state["end_time"] = end_dt.strftime("%Y-%m-%d %H:%M:%S")
         analysis_state["execution_time_seconds"] = execution_time
 
 
-def run_answering_in_background(topic_name, ws_ids, headless):
+def run_answering_in_background(topic_name, ws_ids, headless, instances_count=1):
     global answering_state
+    
+    start_dt = datetime.now()
+    total_ws = len(ws_ids)
+    
+    instances_count = max(1, min(4, int(instances_count)))
+    chunk_size = (total_ws + instances_count - 1) // instances_count
+    chunks = [ws_ids[i:i + chunk_size] for i in range(0, total_ws, chunk_size)]
+    while len(chunks) < instances_count:
+        chunks.append([])
+        
+    # Answering time estimate: ~45 seconds per worksheet
+    est_total = (total_ws * 45.0) / instances_count
     
     with state_lock:
         answering_state["status"] = "Processing"
         answering_state["worksheet_id"] = ", ".join(ws_ids) if ws_ids else ""
         answering_state["topic_name"] = topic_name
         answering_state["logs"] = []
-        answering_state["total_worksheets"] = len(ws_ids)
+        answering_state["total_worksheets"] = total_ws
         answering_state["completed_worksheets"] = 0
         answering_state["current_worksheet_idx"] = 0
-        answering_state["remaining_worksheets"] = len(ws_ids)
+        answering_state["remaining_worksheets"] = total_ws
         answering_state["percent_complete"] = 0.0
-        answering_state["start_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        answering_state["start_time"] = start_dt.strftime("%Y-%m-%d %H:%M:%S")
+        answering_state["instances_count"] = instances_count
+        answering_state["estimated_total_time"] = est_total
+        answering_state["estimated_remaining_time"] = est_total
         
+    thread_ws_active = {}
+    thread_ws_completed = {i: 0 for i in range(instances_count)}
+    
     def log_callback(msg):
         with state_lock:
             answering_state["logs"].append({
@@ -465,33 +574,68 @@ def run_answering_in_background(topic_name, ws_ids, headless):
                 "message": msg
             })
             
-    def state_updater(current_ws_id, current_idx, completed, remaining, percent):
-        with state_lock:
-            answering_state["worksheet_id"] = current_ws_id
-            answering_state["current_worksheet_idx"] = current_idx
-            answering_state["completed_worksheets"] = completed
-            answering_state["remaining_worksheets"] = remaining
-            answering_state["percent_complete"] = percent
-
-    try:
-        from main_answering import run_answering_for_worksheets
-        success = run_answering_for_worksheets(
-            topic_name,
-            ws_ids,
-            headless=headless,
-            log_callback=log_callback,
-            state_updater=state_updater
-        )
+    def run_worker_answering(thread_idx, chunk):
+        profile_suffix = None if thread_idx == 0 else str(thread_idx)
         
-        with state_lock:
-            if success:
-                answering_state["status"] = "Completed"
-            else:
-                answering_state["status"] = "Failed"
-    except Exception as e:
-        log_callback(f"[ERROR] Exception occurred during answering execution: {e}")
-        with state_lock:
+        # Stagger browser launches
+        if thread_idx > 0:
+            time.sleep(thread_idx * 7)
+            
+        def inner_state_updater(current_ws_id, current_idx, completed, remaining, percent):
+            with state_lock:
+                if current_ws_id:
+                    thread_ws_active[thread_idx] = current_ws_id
+                thread_ws_completed[thread_idx] = completed
+                
+                # Aggregate thread metrics
+                total_completed = sum(thread_ws_completed.values())
+                active_ws = [ws for ws in thread_ws_active.values() if ws]
+                
+                answering_state["worksheet_id"] = ", ".join(active_ws)
+                answering_state["completed_worksheets"] = total_completed
+                answering_state["remaining_worksheets"] = max(0, total_ws - total_completed)
+                answering_state["percent_complete"] = (total_completed / total_ws) * 100.0
+                
+                # Estimated remaining time
+                inst = answering_state.get("instances_count", 1)
+                rem_ws = answering_state["remaining_worksheets"]
+                answering_state["estimated_remaining_time"] = (rem_ws * 45.0) / inst
+                
+        try:
+            from main_answering import run_answering_for_worksheets
+            run_answering_for_worksheets(
+                topic_name,
+                chunk,
+                headless=headless,
+                log_callback=log_callback,
+                state_updater=inner_state_updater,
+                profile_suffix=profile_suffix
+            )
+        except Exception as e:
+            log_callback(f"[ERROR] [Instance {thread_idx + 1}] Exception: {e}")
+            
+    # Spawn worker threads
+    import threading
+    worker_threads = []
+    for idx in range(instances_count):
+        chunk = chunks[idx]
+        if not chunk:
+            continue
+        t = threading.Thread(target=run_worker_answering, args=(idx, chunk))
+        t.daemon = True
+        t.start()
+        worker_threads.append(t)
+        
+    for t in worker_threads:
+        t.join()
+        
+    with state_lock:
+        if answering_state["completed_worksheets"] >= total_ws:
+            answering_state["status"] = "Completed"
+        else:
             answering_state["status"] = "Failed"
+        answering_state["percent_complete"] = 100.0
+        answering_state["estimated_remaining_time"] = 0.0
 
 
 def run_analysis_in_background():
@@ -703,10 +847,13 @@ def run_analysis_in_background():
                     "ai_response": ai_text,
                     "analysis_time": analysis_time_str,
                     "status": "Issue" if "Issue:" in ai_text else "Passed",
-                    "created_timestamp": datetime.now()
                 }
                 try:
-                    collection.insert_one(doc)
+                    collection.update_one(
+                        {"worksheet_id": _ws_id, "question_number": q_num},
+                        {"$set": doc, "$setOnInsert": {"created_timestamp": datetime.now()}},
+                        upsert=True
+                    )
                 except Exception as e:
                     print(f"Failed to write to MongoDB: {e}")
 
@@ -823,13 +970,14 @@ def start_analysis():
     worksheet_id = data.get("worksheet_id", "").strip()
     worksheet_ids = data.get("worksheet_ids", [])
     skip_extraction = data.get("skip_extraction", False)
+    instances_count = int(data.get("instances_count", 1))
     
     if not worksheet_ids and worksheet_id:
         worksheet_ids = [worksheet_id]
         
     if topic_name and worksheet_ids:
         # Start unified pipeline: Extraction + Analysis for multiple worksheets
-        thread = threading.Thread(target=run_pipeline_in_background, args=(topic_name, worksheet_ids, skip_extraction))
+        thread = threading.Thread(target=run_pipeline_in_background, args=(topic_name, worksheet_ids, skip_extraction, instances_count))
     else:
         # Fallback to original analysis workflow of scanned worksheets
         thread = threading.Thread(target=run_analysis_in_background)
@@ -970,6 +1118,7 @@ def start_answering():
         ws_ids = data.get("worksheet_ids", [])
         topic_name = data.get("topic_name")
         headless = data.get("headless", False)
+        instances_count = int(data.get("instances_count", 1))
         
         if not ws_ids and ws_id:
             ws_ids = [ws_id]
@@ -988,7 +1137,7 @@ def start_answering():
             if answering_state["status"] == "Processing":
                 return jsonify({"error": "Answering automation is already running."}), 400
                 
-        thread = threading.Thread(target=run_answering_in_background, args=(topic_name, ws_ids, headless))
+        thread = threading.Thread(target=run_answering_in_background, args=(topic_name, ws_ids, headless, instances_count))
         thread.daemon = True
         thread.start()
         
@@ -1028,7 +1177,10 @@ def reset_dashboard():
             "total_passed": 0,
             "start_time": None,
             "end_time": None,
-            "execution_time_seconds": 0.0
+            "execution_time_seconds": 0.0,
+            "instances_count": 1,
+            "estimated_total_time": 0.0,
+            "estimated_remaining_time": 0.0
         })
     return jsonify({"status": "reset"})
 

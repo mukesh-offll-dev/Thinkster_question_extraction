@@ -35,11 +35,13 @@ from utils import (
 log = get_logger()
 
 
+from typing import Optional
+
 # ---------------------------------------------------------------------------
 # Browser launch
 # ---------------------------------------------------------------------------
 
-def launch_browser() -> WebDriver:
+def launch_browser(profile_suffix: Optional[str] = None) -> WebDriver:
     """
     Launch and return a Chrome WebDriver with production-appropriate settings.
 
@@ -67,6 +69,8 @@ def launch_browser() -> WebDriver:
     # ---- Session Cache ------------------------------------------------
     if getattr(config, "PERSIST_SESSION", False):
         profile_dir = getattr(config, "CHROME_PROFILE_DIR", "chrome_profile")
+        if profile_suffix:
+            profile_dir = f"{profile_dir}_{profile_suffix}"
         profile_path = os.path.abspath(profile_dir)
         log.info("Using persistent Chrome profile directory: %s", profile_path)
         options.add_argument(f"--user-data-dir={profile_path}")

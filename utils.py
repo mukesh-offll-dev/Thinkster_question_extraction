@@ -269,7 +269,7 @@ def get_element_html(driver: WebDriver, element: WebElement) -> str:
 # Thinkster Automation Orchestration & Shared Helpers
 # ---------------------------------------------------------------------------
 
-def setup_driver_and_navigate() -> WebDriver:
+def setup_driver_and_navigate(profile_suffix: Optional[str] = None) -> WebDriver:
     """
     Launch Chrome, log in, select the student, and navigate to the dashboard.
     Cleans up the browser if any setup step fails.
@@ -277,7 +277,7 @@ def setup_driver_and_navigate() -> WebDriver:
     from login import launch_browser, login
     from dashboard import select_student, click_start_learning
     
-    driver = launch_browser()
+    driver = launch_browser(profile_suffix=profile_suffix)
     try:
         login(driver)
         select_student(driver)
