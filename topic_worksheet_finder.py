@@ -499,9 +499,21 @@ class TopicWorksheetFinder:
                 // Ensure we don't click the parent topic container itself or something outside
                 if (t === el || el.parentElement && t === el.parentElement) return;
                 
-                // Skip action/selection buttons (e.g. Select, Start, Resume)
+                // Read text of the element
                 let text = (t.innerText || t.textContent || "").trim().toLowerCase();
-                if (text === "select" || text === "start" || text === "resume" || text === "continue" || text === "begin" || text === "go" || text === "play") return;
+                
+                // If it is a button with text "continue", it's the trigger to expand the subtopic
+                if (text === "continue") {
+                    try {
+                        t.scrollIntoView({behavior: 'instant', block: 'center'});
+                        t.click();
+                        count++;
+                    } catch (e) {}
+                    return;
+                }
+                
+                // Skip other action/selection buttons (e.g. Select, Start, Resume)
+                if (text === "select" || text === "start" || text === "resume" || text === "begin" || text === "go" || text === "play") return;
                 
                 // Read expanded state
                 let expanded = t.getAttribute('aria-expanded');

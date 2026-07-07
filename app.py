@@ -192,7 +192,13 @@ answering_state = {
     "status": "Waiting", # Waiting, Processing, Completed, Failed
     "worksheet_id": "",
     "topic_name": "",
-    "logs": []
+    "logs": [],
+    "total_worksheets": 0,
+    "completed_worksheets": 0,
+    "current_worksheet_idx": 0,
+    "remaining_worksheets": 0,
+    "percent_complete": 0.0,
+    "start_time": None
 }
 
 def run_pipeline_in_background(topic_name, worksheet_ids, skip_extraction):
@@ -319,12 +325,10 @@ def run_pipeline_in_background(topic_name, worksheet_ids, skip_extraction):
 
             img_path = os.path.join(ws_dir, filename)
 
-            max_retries = 3
-            retry_delay = 15
-            response = None
-            ai_text = ""
-
-            for attempt in range(max_retries):
+            attempt = 0
+            retry_delay = 10
+            while True:
+                attempt += 1
                 try:
                     response = client.chat(
                         model=MODEL_NAME,
@@ -341,19 +345,29 @@ def run_pipeline_in_background(topic_name, worksheet_ids, skip_extraction):
                     break
                 except Exception as e:
                     err_msg = str(e)
-                    is_rate_limit = "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "quota" in err_msg.lower()
-
-                    if is_rate_limit and attempt < max_retries - 1:
-                        log_callback(f"⏳ Rate limit reached. Waiting {retry_delay}s before retry...", q_num)
-                        time.sleep(retry_delay)
-                        continue
-
+                    is_permanent = "SAFETY" in err_msg or "safety" in err_msg.lower() or "INVALID_ARGUMENT" in err_msg
+                    if is_permanent:
+                        if "SAFETY" in err_msg or "safety" in err_msg.lower():
+                            ai_text = "❌ Model refused to process this image due to safety filters."
+                        else:
+                            ai_text = f"❌ Model error: {err_msg.splitlines()[0][:180]}"
+                        break
+                    
+                    is_rate_limit = "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "quota" in err_msg.lower() or "limit" in err_msg.lower()
+                    is_connection = "connection" in err_msg.lower() or "reach" in err_msg.lower() or "failed to connect" in err_msg.lower() or "disconnected" in err_msg.lower() or "socket" in err_msg.lower()
+                    is_busy = "busy" in err_msg.lower() or "overloaded" in err_msg.lower() or "503" in err_msg or "unavailable" in err_msg.lower()
+                    
                     if is_rate_limit:
-                        ai_text = f"❌ Rate limit exceeded after {max_retries} retries."
+                        status_msg = "⏳ AI server is busy. Retrying..."
+                    elif is_connection:
+                        status_msg = "⏳ Connection lost. Retrying..."
+                    elif is_busy:
+                        status_msg = "⏳ Waiting for the AI model to become available..."
                     else:
-                        first_err_line = err_msg.split('\n')[0][:180]
-                        ai_text = f"❌ Model error: {first_err_line}"
-                    break
+                        status_msg = "⏳ Waiting for AI response..."
+                    
+                    log_callback(status_msg, q_num)
+                    time.sleep(retry_delay)
 
             is_issue = "Issue:" in ai_text or ai_text.startswith("❌")
             analysis_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -436,6 +450,12 @@ def run_answering_in_background(topic_name, ws_ids, headless):
         answering_state["worksheet_id"] = ", ".join(ws_ids) if ws_ids else ""
         answering_state["topic_name"] = topic_name
         answering_state["logs"] = []
+        answering_state["total_worksheets"] = len(ws_ids)
+        answering_state["completed_worksheets"] = 0
+        answering_state["current_worksheet_idx"] = 0
+        answering_state["remaining_worksheets"] = len(ws_ids)
+        answering_state["percent_complete"] = 0.0
+        answering_state["start_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
     def log_callback(msg):
         with state_lock:
@@ -444,23 +464,26 @@ def run_answering_in_background(topic_name, ws_ids, headless):
                 "message": msg
             })
             
+    def state_updater(current_ws_id, current_idx, completed, remaining, percent):
+        with state_lock:
+            answering_state["worksheet_id"] = current_ws_id
+            answering_state["current_worksheet_idx"] = current_idx
+            answering_state["completed_worksheets"] = completed
+            answering_state["remaining_worksheets"] = remaining
+            answering_state["percent_complete"] = percent
+
     try:
-        from main_answering import run_answering_for_worksheet
-        all_success = True
-        for ws_id in ws_ids:
-            log_callback(f"Starting answering automation for worksheet '{ws_id}'...")
-            with state_lock:
-                answering_state["worksheet_id"] = ws_id
-            
-            success = run_answering_for_worksheet(topic_name, ws_id, headless=headless, log_callback=log_callback)
-            if not success:
-                all_success = False
-                log_callback(f"❌ Answering automation failed for worksheet '{ws_id}'.")
-            else:
-                log_callback(f"✅ Answering automation completed successfully for worksheet '{ws_id}'.")
+        from main_answering import run_answering_for_worksheets
+        success = run_answering_for_worksheets(
+            topic_name,
+            ws_ids,
+            headless=headless,
+            log_callback=log_callback,
+            state_updater=state_updater
+        )
         
         with state_lock:
-            if all_success:
+            if success:
                 answering_state["status"] = "Completed"
             else:
                 answering_state["status"] = "Failed"
@@ -616,12 +639,10 @@ def run_analysis_in_background():
 
             img_path = os.path.join(screenshots_dir, _ws_id, filename)
 
-            max_retries = 3
-            retry_delay = 15
-            response = None
-            ai_text = ""
-
-            for attempt in range(max_retries):
+            attempt = 0
+            retry_delay = 10
+            while True:
+                attempt += 1
                 try:
                     response = client.chat(
                         model=MODEL_NAME,
@@ -638,32 +659,36 @@ def run_analysis_in_background():
                     break
                 except Exception as e:
                     err_msg = str(e)
-                    is_rate_limit = "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "quota" in err_msg.lower()
-
-                    if is_rate_limit and attempt < max_retries - 1:
-                        with state_lock:
-                            analysis_state["logs"].append({
-                                "worksheet_id": _ws_id,
-                                "question_number": q_num,
-                                "screenshot_name": filename,
-                                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                "ai_response": f"⏳ Rate limit reached. Waiting {retry_delay}s before retry (attempt {attempt + 1}/{max_retries})...."
-                            })
-                        time.sleep(retry_delay)
-                        continue
-
+                    is_permanent = "SAFETY" in err_msg or "safety" in err_msg.lower() or "INVALID_ARGUMENT" in err_msg
+                    if is_permanent:
+                        if "SAFETY" in err_msg or "safety" in err_msg.lower():
+                            ai_text = "❌ Model refused to process this image due to safety filters."
+                        else:
+                            ai_text = f"❌ Model error: {err_msg.splitlines()[0][:180]}"
+                        break
+                    
+                    is_rate_limit = "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "quota" in err_msg.lower() or "limit" in err_msg.lower()
+                    is_connection = "connection" in err_msg.lower() or "reach" in err_msg.lower() or "failed to connect" in err_msg.lower() or "disconnected" in err_msg.lower() or "socket" in err_msg.lower()
+                    is_busy = "busy" in err_msg.lower() or "overloaded" in err_msg.lower() or "503" in err_msg or "unavailable" in err_msg.lower()
+                    
                     if is_rate_limit:
-                        ai_text = f"❌ Rate limit exceeded after {max_retries} retries. Please wait and try again."
-                    elif "SAFETY" in err_msg or "safety" in err_msg.lower():
-                        ai_text = "❌ Model refused to process this image due to safety filters."
-                    elif "INVALID_ARGUMENT" in err_msg:
-                        ai_text = "❌ Invalid image or request format. Check the screenshot file."
-                    elif "UNAVAILABLE" in err_msg or "ServiceUnavailable" in err_msg:
-                        ai_text = "❌ Gemini service temporarily unavailable. Try again later."
+                        status_msg = "⏳ AI server is busy. Retrying..."
+                    elif is_connection:
+                        status_msg = "⏳ Connection lost. Retrying..."
+                    elif is_busy:
+                        status_msg = "⏳ Waiting for the AI model to become available..."
                     else:
-                        clean = err_msg.split("\n")[0][:180]
-                        ai_text = f"❌ Model error: {clean}"
-                    break
+                        status_msg = "⏳ Waiting for AI response..."
+                    
+                    with state_lock:
+                        analysis_state["logs"].append({
+                            "worksheet_id": _ws_id,
+                            "question_number": q_num,
+                            "screenshot_name": filename,
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "ai_response": status_msg
+                        })
+                    time.sleep(retry_delay)
 
             is_issue = "Issue:" in ai_text or ai_text.startswith("❌")
             analysis_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -919,10 +944,17 @@ def fetch_worksheets():
     try:
         data = request.get_json() or {}
         topic_name = data.get("topic_name", "").strip()
+        from_answering = data.get("from_answering", False)
         if not topic_name:
             return jsonify({"error": "Missing topic_name"}), 400
             
         worksheets = get_worksheets_under_topic(topic_name)
+        
+        if from_answering:
+            report_coll = db["Worksheet_Report"]
+            valid_ws_ids = set(report_coll.distinct("worksheet_id"))
+            worksheets = [ws for ws in worksheets if ws["id"] in valid_ws_ids]
+            
         return jsonify({"status": "success", "worksheets": worksheets})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -944,6 +976,13 @@ def start_answering():
         if not ws_ids or not topic_name:
             return jsonify({"error": "Missing worksheet_ids or topic_name."}), 400
             
+        # Check that all worksheet IDs are in the Worksheet_Report collection
+        report_coll = db["Worksheet_Report"]
+        valid_ws_ids = set(report_coll.distinct("worksheet_id"))
+        for w_id in ws_ids:
+            if w_id not in valid_ws_ids:
+                return jsonify({"error": f"Worksheet {w_id} is not present in the reports."}), 400
+                
         with state_lock:
             if answering_state["status"] == "Processing":
                 return jsonify({"error": "Answering automation is already running."}), 400

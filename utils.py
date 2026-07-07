@@ -377,6 +377,35 @@ def exit_worksheet(driver: WebDriver) -> bool:
     """
     log.info("Attempting to exit the worksheet...")
     print("\nExiting current worksheet...")
+
+    # Check for "Keep Learning" button (for finished worksheet/summary page)
+    try:
+        js_summary = """
+        let buttons = Array.from(document.querySelectorAll('button, a, [role="button"], div, span'));
+        for (let btn of buttons) {
+            let text = (btn.innerText || btn.textContent || "").trim().toLowerCase();
+            if (text === 'keep learning') {
+                btn.click();
+                return true;
+            }
+        }
+        for (let btn of buttons) {
+            let text = (btn.innerText || btn.textContent || "").trim().toLowerCase();
+            if (text.includes('keep learning')) {
+                btn.click();
+                return true;
+            }
+        }
+        return false;
+        """
+        is_summary = driver.execute_script(js_summary)
+        if is_summary:
+            log.info("Found and clicked 'Keep Learning' button on summary/completion page.")
+            print("Clicked 'Keep Learning' to exit completion page.")
+            time.sleep(5.0)
+            return True
+    except Exception as e:
+        log.warning("Error checking for summary page 'Keep Learning' button: %s", e)
     
     js_code = """
     function clickExit() {
