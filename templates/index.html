@@ -700,9 +700,6 @@
                 </svg>
                 Start Analysis
             </button>
-            <button id="showReportBtn" class="btn btn-secondary" onclick="scrollToReport()" disabled>
-                View Report
-            </button>
         </div>
     </header>
 
@@ -716,7 +713,7 @@
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                     <div style="display: flex; flex-direction: column; gap: 6px;">
                         <label for="pipelineTopic" style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Topic Name</label>
-                        <select id="pipelineTopic" onchange="toggleManualTopic()" style="font-family: inherit; font-size: 13px; padding: 9px 12px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-dark); outline: none; transition: border-color 0.2s;">
+                        <select id="pipelineTopic" onchange="toggleManualTopic(); onTopicChange();" style="font-family: inherit; font-size: 13px; padding: 9px 12px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-dark); outline: none; transition: border-color 0.2s;">
                             <option value="Complex Numbers">Complex Numbers</option>
                             <option value="Algebra 2 Foundations">Algebra 2 Foundations</option>
                             <option value="Number Representation">Number Representation</option>
@@ -876,35 +873,7 @@
         </div>
     </div>
 
-    <!-- Report Table Section -->
-    <div id="reportSection" class="report-section glass-card main-container" style="display: none; grid-template-columns: 1fr; margin-bottom: 40px;">
-        <div class="report-header">
-            <h2>Worksheet Analysis Report Matrix</h2>
-            <div class="export-btn-group">
-                <a id="exportExcelBtn" href="/api/export/excel" class="btn btn-secondary" target="_blank">
-                    Excel Export
-                </a>
-                <a id="exportHtmlBtn" href="/api/export/html" class="btn btn-secondary" download="worksheet_report.html">
-                    HTML Export
-                </a>
-                <a id="exportPdfBtn" href="/api/export/pdf" class="btn btn-primary" target="_blank">
-                    Print PDF
-                </a>
-            </div>
-        </div>
-        <div class="table-responsive">
-            <table id="reportTable" class="report-table">
-                <thead>
-                    <tr id="reportTableHeader">
-                        <!-- Dynamic headers go here -->
-                    </tr>
-                </thead>
-                <tbody id="reportTableBody">
-                    <!-- Dynamic rows go here -->
-                </tbody>
-            </table>
-        </div>
-    </div>
+
 
     <!-- Modal for Full Text View -->
     <div id="responseModal" class="modal" onclick="closeModal(event)">
@@ -951,8 +920,15 @@
                                 <p style="font-size:14px;font-weight:500;">Dashboard cleared</p>
                                 <small style="font-size:12px;opacity:.7;">Click &ldquo;Start Analysis&rdquo; to begin</small>
                             </div>`;
-                        document.getElementById('reportSection').style.display = 'none';
-                        document.getElementById('showReportBtn').disabled = true;
+                        
+                        // Clear localStorage worksheet caches
+                        localStorage.removeItem("thinkster_analysis_cache");
+                        localStorage.removeItem("thinkster_answering_cache");
+                        
+                        // Hide the worksheets checklist
+                        const checklistCard = document.getElementById("worksheetsChecklistCard");
+                        if (checklistCard) checklistCard.style.display = "none";
+                        
                         pollStatus();
                         showToast('🔄 Dashboard cleared and reset!', '#0D47A1');
                     } else {
@@ -983,6 +959,35 @@
 
         let fetchedWorksheets = [];
 
+        function loadCachedWorksheets() {
+            try {
+                const cachedStr = localStorage.getItem("thinkster_analysis_cache");
+                if (cachedStr) {
+                    const cache = JSON.parse(cachedStr);
+                    let topicName = document.getElementById("pipelineTopic").value;
+                    if (topicName === "__manual__") {
+                        topicName = document.getElementById("pipelineTopicManual").value.trim();
+                    }
+                    const now = Date.now();
+                    // 10 minutes cache expiry
+                    if (cache.topic === topicName && (now - cache.timestamp < 10 * 60 * 1000)) {
+                        renderWorksheetsChecklist(cache.worksheets);
+                        return true;
+                    }
+                }
+            } catch (e) {
+                console.error("Error reading cache", e);
+            }
+            return false;
+        }
+
+        function onTopicChange() {
+            const loaded = loadCachedWorksheets();
+            if (!loaded) {
+                document.getElementById("worksheetsChecklistCard").style.display = "none";
+            }
+        }
+
         function fetchWorksheetsForTopic() {
             let topicName = document.getElementById("pipelineTopic").value;
             if (topicName === "__manual__") {
@@ -1009,6 +1014,16 @@
                 spinner.style.display = "none";
                 
                 if (data.status === "success" && data.worksheets) {
+                    try {
+                        const cacheData = {
+                            topic: topicName,
+                            worksheets: data.worksheets,
+                            timestamp: Date.now()
+                        };
+                        localStorage.setItem("thinkster_analysis_cache", JSON.stringify(cacheData));
+                    } catch (e) {
+                        console.error("Failed to write cache", e);
+                    }
                     renderWorksheetsChecklist(data.worksheets);
                     showToast(`✅ Loaded ${data.worksheets.length} worksheets!`, "#2E7D32");
                 } else {
@@ -1122,7 +1137,6 @@
             }
 
             startBtn.disabled = true;
-            document.getElementById("showReportBtn").disabled = true;
             document.getElementById("verifyAnswersBtn").style.display = "none";
 
             fetch("/api/start", {
@@ -1140,7 +1154,6 @@
                     showToast("✅ Pipeline started!", "#1565C0");
                     lastLogCount = 0;
                     document.getElementById("logContainer").innerHTML = "";
-                    document.getElementById("reportSection").style.display = "none";
                     stopBtn.style.display  = "inline-flex";
                     startBtn.style.display = "none";
                     startPolling();
@@ -1188,9 +1201,7 @@
                         document.getElementById("startBtn").disabled = false;
                         if (state.status === "Completed") {
                             showToast("✅ Pipeline completed!", "#2E7D32");
-                            document.getElementById("showReportBtn").disabled = false;
                             document.getElementById("verifyAnswersBtn").style.display = "inline-flex";
-                            renderReportTable(state);
                         } else {
                             showToast("⏹️ Analysis stopped.", "#E65100");
                         }
@@ -1380,6 +1391,15 @@
         // Initialize status on load
         window.addEventListener("DOMContentLoaded", () => {
             pollStatus();
+            
+            // Set up manual topic change listener
+            const manualInput = document.getElementById("pipelineTopicManual");
+            if (manualInput) {
+                manualInput.addEventListener("input", onTopicChange);
+            }
+            
+            // Initial cached data check
+            onTopicChange();
         });
     </script>
 </body>

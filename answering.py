@@ -5,6 +5,7 @@
 import os
 import time
 import json
+import re
 import unicodedata
 from typing import Optional
 from selenium.webdriver.common.by import By
@@ -173,63 +174,120 @@ def handle_mcq(driver: WebDriver, answer: str) -> bool:
 
 def handle_matrix(driver: WebDriver, answers: list) -> bool:
     """Select options for True/False matrix/table question."""
-    rows = driver.find_elements(By.CSS_SELECTOR, "tr, [class*='lrn-matrix-row']")
-    visible_rows = []
-    
+    # Normalize answers if it is passed as a string representation of a list
+    if isinstance(answers, str):
+        cleaned = answers.strip()
+        matches = re.findall(r"\b(true|false|yes|no|t|f|y|n)\b", cleaned, re.IGNORECASE)
+        if (cleaned.startswith("[") or "," in cleaned) and len(matches) > 1:
+            answers = matches
+        elif len(matches) > 1:
+            answers = matches
+    # Find the active question container if possible to avoid matching other questions' elements
+    active_container = None
+    for wrapper_class in ["lrn-active", "lrn-item-slide", "lrn-response-validate-wrapper", "lrn-question"]:
+        try:
+            wrappers = driver.find_elements(By.CLASS_NAME, wrapper_class)
+            for w in wrappers:
+                if w.is_displayed():
+                    active_container = w
+                    break
+            if active_container:
+                break
+        except Exception:
+            pass
+
+    if active_container:
+        log.debug("Found active question container: %s", active_container.get_attribute("class"))
+        rows = active_container.find_elements(By.CSS_SELECTOR, "tr, [class*='lrn-matrix-row']")
+    else:
+        rows = driver.find_elements(By.CSS_SELECTOR, "tr, [class*='lrn-matrix-row']")
+
+    # Filter only rows that contain radio or checkbox options (statement rows)
+    valid_rows = []
     for r in rows:
         try:
             if r.is_displayed():
-                cells = r.find_elements(By.TAG_NAME, "td")
                 inputs = r.find_elements(By.CSS_SELECTOR, "input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox']")
-                if len(cells) > 1 or inputs:
-                    visible_rows.append((r, cells, inputs))
+                if inputs:
+                    valid_rows.append((r, inputs))
         except Exception:
             pass
-            
-    # Filter out header row
-    valid_rows = []
-    for r, cells, inputs in visible_rows:
-        if inputs:
-            valid_rows.append((r, cells, inputs))
-        elif len(cells) > 1:
-            has_clickable = False
-            for cell in cells[1:]:
-                if cell.find_elements(By.CSS_SELECTOR, "input, label, span, [role]"):
-                    has_clickable = True
-                    break
-            if has_clickable:
-                valid_rows.append((r, cells, inputs))
-                
+
     if not valid_rows:
+        log.warning("No valid matrix rows with inputs found.")
         return False
-        
+
     log.info("Matrix table detected. Valid rows: %d", len(valid_rows))
-    for idx, (row, cells, inputs) in enumerate(valid_rows):
+    for idx, (row, inputs) in enumerate(valid_rows):
         if idx >= len(answers):
             break
+
         val = str(answers[idx]).strip().lower()
-        select_idx = 0 if val in ("true", "t", "yes", "y") else 1
-        
-        clicked = False
-        if inputs and select_idx < len(inputs):
+        val_norm = "true" if val in ("true", "t", "yes", "y") else "false"
+
+        # Match input element corresponding to the answer
+        target_input = None
+
+        # Method 1: Check aria-label
+        for inp in inputs:
+            aria_label = (inp.get_attribute("aria-label") or "").strip().lower()
+            if val_norm == "true" and (aria_label.startswith("true") or aria_label.startswith("yes") or "true -" in aria_label or "yes -" in aria_label):
+                target_input = inp
+                break
+            elif val_norm == "false" and (aria_label.startswith("false") or aria_label.startswith("no") or "false -" in aria_label or "no -" in aria_label):
+                target_input = inp
+                break
+
+        # Method 2: Check associated label element
+        if not target_input:
+            for inp in inputs:
+                inp_id = inp.get_attribute("id")
+                if inp_id:
+                    try:
+                        label = row.find_element(By.CSS_SELECTOR, f"label[for='{inp_id}']")
+                        label_text = label.text.strip().lower()
+                        if val_norm == "true" and label_text in ("true", "t", "yes", "y"):
+                            target_input = inp
+                            break
+                        elif val_norm == "false" and label_text in ("false", "f", "no", "n"):
+                            target_input = inp
+                            break
+                    except Exception:
+                        pass
+
+        # Method 3: Fallback to simple index matching if inputs match True/False standard order
+        if not target_input:
+            select_idx = 0 if val_norm == "true" else 1
+            if select_idx < len(inputs):
+                target_input = inputs[select_idx]
+
+        if target_input:
+            clicked = False
             try:
-                driver.execute_script("arguments[0].click();", inputs[select_idx])
+                # Try clicking the input itself
+                driver.execute_script("arguments[0].click();", target_input)
                 clicked = True
             except Exception:
                 pass
-                
-        if not clicked and cells and (select_idx + 1) < len(cells):
-            target_cell = cells[select_idx + 1]
-            try:
-                sub_elements = target_cell.find_elements(By.CSS_SELECTOR, "input, label, span, [role]")
-                if sub_elements:
-                    driver.execute_script("arguments[0].click();", sub_elements[0])
-                else:
-                    driver.execute_script("arguments[0].click();", target_cell)
-                clicked = True
-            except Exception as e:
-                log.error("Failed to click matrix cell for row %d, col %d: %s", idx, select_idx, e)
-                
+
+            if not clicked:
+                # Fallback to clicking label if input click failed
+                try:
+                    inp_id = target_input.get_attribute("id")
+                    if inp_id:
+                        label = row.find_element(By.CSS_SELECTOR, f"label[for='{inp_id}']")
+                        driver.execute_script("arguments[0].click();", label)
+                        clicked = True
+                except Exception:
+                    pass
+
+            if clicked:
+                log.info("Selected matrix option for row %d matching '%s'", idx, val_norm)
+            else:
+                log.error("Failed to select matrix option for row %d", idx)
+        else:
+            log.error("Could not find matching input element for answer '%s' in row %d", answers[idx], idx)
+
     return True
 
 
@@ -944,15 +1002,26 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
             continue
             
         active_item = get_active_container(driver, q_no)
-        
+        # Try to parse matrix answers if stored as string representation of a list/sequence
+        matrix_answers = None
+        if isinstance(q_answer, str):
+            cleaned = q_answer.strip()
+            # Look for a sequence of True/False/Yes/No/T/F/Y/N values
+            matches = re.findall(r"\b(true|false|yes|no|t|f|y|n)\b", cleaned, re.IGNORECASE)
+            if (cleaned.startswith("[") or "," in cleaned) and len(matches) > 1:
+                matrix_answers = matches
+            elif len(matches) > 1:
+                # If the string contains multiple T/F words separated by spaces or punctuation
+                matrix_answers = matches
+
         input_success = False
         
         # A. Try MCQ
-        if isinstance(q_answer, str) and handle_mcq(driver, q_answer):
+        if isinstance(q_answer, str) and not matrix_answers and handle_mcq(driver, q_answer):
             input_success = True
             
-        # B. Try Matrix (if list of values)
-        elif isinstance(q_answer, list) and handle_matrix(driver, q_answer):
+        # B. Try Matrix (if list of values or parsed list of values)
+        elif (isinstance(q_answer, list) or matrix_answers) and handle_matrix(driver, matrix_answers or q_answer):
             input_success = True
             
         # B2. Try Cloze / Drag-and-drop (if list of values)

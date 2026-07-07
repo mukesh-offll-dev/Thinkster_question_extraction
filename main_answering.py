@@ -114,7 +114,7 @@ def load_answers_from_db(worksheet_id: str) -> Optional[dict]:
         return None
 
 
-def save_answering_report_to_db(worksheet_id: str, topic_name: str, results: dict) -> None:
+def save_answering_report_to_db(worksheet_id: str, topic_name: str, results: dict, db_answers: dict = None) -> None:
     """
     Saves the automated answering and grading results for a worksheet to MongoDB.
     """
@@ -197,6 +197,24 @@ def save_answering_report_to_db(worksheet_id: str, topic_name: str, results: dic
                 if len(ans_str) >= 3 and ans_str[0].upper() in "ABCDEFGHIJ" and ans_str[1] in (" ", "("):
                     return f"Option {ans_str}"
             return ans_str
+
+        def format_db_correct_answer(ans):
+            if ans is None:
+                return "None"
+            if isinstance(ans, list):
+                ans_str = ", ".join(map(str, ans))
+            else:
+                ans_str = str(ans).strip()
+            
+            # Handle '|frac' and '|sqrt' syntax from the user requirement
+            ans_str = ans_str.replace("|frac", "\\frac").replace("|sqrt", "\\sqrt")
+            
+            # Check if it is a LaTeX mathematical expression or fraction
+            has_latex = "\\" in ans_str or "frac" in ans_str or "sqrt" in ans_str
+            
+            if has_latex and not (ans_str.startswith("$") and ans_str.endswith("$")):
+                ans_str = f"${ans_str}$"
+            return ans_str
             
         for q_no, q_data in results.items():
             status = q_data.get("status", "unknown")
@@ -204,11 +222,17 @@ def save_answering_report_to_db(worksheet_id: str, topic_name: str, results: dic
                 website_correct_answer = q_data.get("website_correct_answer")
                 has_web = website_correct_answer is not None and str(website_correct_answer).strip().lower() not in ("none", "")
                 
+                db_ans_formatted = ""
+                if db_answers:
+                    db_ans = db_answers.get(str(q_no))
+                    if db_ans is not None:
+                        db_ans_formatted = f" CORRECT ANS: {format_db_correct_answer(db_ans)}"
+
                 if has_web:
                     correct_ans_formatted = format_answer_for_msg(website_correct_answer)
-                    ai_text = f"Issue: Q{q_no}. The worksheet answer key is incorrect. The correct answer is {correct_ans_formatted}."
+                    ai_text = f"Issue: Q{q_no}. The worksheet answer key is incorrect. The correct answer is {correct_ans_formatted}.{db_ans_formatted}"
                 else:
-                    ai_text = f"Issue: Q{q_no}. The worksheet answer key is incorrect."
+                    ai_text = f"Issue: Q{q_no}. The worksheet answer key is incorrect.\n {db_ans_formatted}"
                 analysis_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
                 worksheet_report_coll.update_one(
@@ -473,7 +497,7 @@ def run_automation() -> None:
             print(f"Opened worksheet {ws_id} successfully. Answering questions...")
             ws_results = answer_worksheet_questions(driver, ws_id, answers)
             worksheet_results[ws_id] = { "title": ws_title, "questions": ws_results }
-            save_answering_report_to_db(ws_id, topic_name, ws_results)
+            save_answering_report_to_db(ws_id, topic_name, ws_results, answers)
             
             # Exit worksheet and return to worksheet list
             exit_success = exit_worksheet(driver)
@@ -781,6 +805,201 @@ def run_answering_for_worksheet(topic_name: str, target_ws_id: str, headless: bo
             time.sleep(5.0)
             
         log_msg(f"[SUCCESS] Finished answering Worksheet: {target_ws_id}")
+        return True
+
+    except Exception as exc:
+        log_msg(f"[ERROR] Answering error: {exc}")
+        return False
+
+    finally:
+        config.HEADLESS = original_headless
+        if driver is not None:
+            try:
+                driver.quit()
+                log_msg("Browser closed.")
+            except Exception:
+                pass
+
+
+def run_answering_for_worksheets(topic_name: str, target_ws_ids: list[str], headless: bool = False, log_callback = None, state_updater = None) -> bool:
+    import os
+    original_headless = config.HEADLESS
+    config.HEADLESS = headless
+
+    def log_msg(msg):
+        if log_callback:
+            log_callback(msg)
+        else:
+            print(msg)
+        log.info(msg)
+
+    # 1. Load answers for all worksheets
+    all_answers = {}
+    for ws_id in target_ws_ids:
+        log_msg(f"Connecting to MongoDB to search for answers for worksheet '{ws_id}'...")
+        answers = load_answers_from_db(ws_id)
+        if answers:
+            log_msg(f"[SUCCESS] Loaded answers from MongoDB for worksheet '{ws_id}'.")
+        else:
+            log_msg(f"[WARN] Could not find answers in MongoDB for '{ws_id}'. Checking local answers file...")
+            answers_dict = {}
+            if os.path.exists(config.ANSWERS_FILE):
+                try:
+                    with open(config.ANSWERS_FILE, "r", encoding="utf-8") as f:
+                        answers_dict = json.load(f)
+                except Exception as e:
+                    log_msg(f"[ERROR] Failed to load answers file: {e}")
+                    return False
+            else:
+                log_msg(f"[ERROR] Answers file '{config.ANSWERS_FILE}' not found.")
+                return False
+                
+            if ws_id not in answers_dict:
+                log_msg(f"[ERROR] Worksheet ID '{ws_id}' has no answers defined locally or in DB.")
+                return False
+            answers = answers_dict[ws_id]
+        all_answers[ws_id] = answers
+
+    driver: Optional[WebDriver] = None
+
+    try:
+        log_msg(f"Launching browser (headless={headless})...")
+        driver = setup_driver_and_navigate()
+
+        from topic_worksheet_finder import TopicWorksheetFinder
+        finder = TopicWorksheetFinder(driver)
+        
+        # Locate the topic
+        topic_el = finder._find_topic_element(topic_name)
+        if not topic_el:
+            log_msg(f"[ERROR] Topic '{topic_name}' was not found on the dashboard.")
+            return False
+
+        log_msg(f"Topic Selected: {topic_name}")
+        
+        # Check if the topic element is part of a sidebar menu
+        is_sidebar = is_sidebar_element(driver, topic_el)
+
+        if is_sidebar:
+            log_msg("Topic is sidebar menu item. Clicking to navigate...")
+            from utils import scroll_into_view, safe_click
+            scroll_into_view(driver, topic_el)
+            safe_click(driver, topic_el)
+            time.sleep(4.0)
+            topic_container = driver.find_element(By.TAG_NAME, "body")
+        else:
+            finder._expand_topic(topic_el)
+            time.sleep(1.5)
+            try:
+                topic_container = driver.execute_script("return arguments[0].parentElement;", topic_el)
+                if not topic_container:
+                    topic_container = topic_el
+            except Exception:
+                topic_container = topic_el
+
+        # Expand sub-sections
+        finder._expand_subsections(topic_container)
+        time.sleep(1.5)
+        
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({behavior: 'instant', block: 'end'});", topic_container)
+            time.sleep(1.0)
+            driver.execute_script("arguments[0].scrollIntoView({behavior: 'instant', block: 'start'});", topic_container)
+            time.sleep(1.0)
+        except Exception:
+            pass
+
+        completed_count = 0
+        total_worksheets = len(target_ws_ids)
+        
+        for idx, target_ws_id in enumerate(target_ws_ids):
+            log_msg(f"--- Processing Worksheet {idx + 1}/{total_worksheets}: {target_ws_id} ---")
+            
+            # Update state for progress tracking
+            if state_updater:
+                state_updater(
+                    current_ws_id=target_ws_id,
+                    current_idx=idx + 1,
+                    completed=completed_count,
+                    remaining=total_worksheets - completed_count,
+                    percent=(completed_count / total_worksheets) * 100.0
+                )
+
+            # Re-locate and expand topic to ensure it is open and visible
+            if not is_sidebar:
+                topic_el = finder._find_topic_element(topic_name)
+                if not topic_el:
+                    log_msg(f"[ERROR] Could not re-locate topic '{topic_name}' during iteration.")
+                    return False
+                finder._expand_topic(topic_el)
+                time.sleep(1.0)
+                try:
+                    topic_container = driver.execute_script("return arguments[0].parentElement;", topic_el)
+                    if not topic_container:
+                        topic_container = topic_el
+                except Exception:
+                    topic_container = topic_el
+            else:
+                topic_container = driver.find_element(By.TAG_NAME, "body")
+                
+            # Expand sub-sections to ensure all worksheet cards are visible
+            finder._expand_subsections(topic_container)
+            time.sleep(1.5)
+            
+            # Re-collect cards and find the matching card
+            cards = finder._collect_cards(topic_container)
+            matching_card = None
+            ws_title = target_ws_id  # Fallback title
+            for card in cards:
+                card_id, card_title = finder.extract_worksheet_id_and_title(card)
+                if card_id == target_ws_id:
+                    matching_card = card
+                    ws_title = card_title
+                    break
+            
+            if not matching_card:
+                log_msg(f"[ERROR] Could not find card for Worksheet ID: {target_ws_id}. Skipping.")
+                continue
+                
+            scroll_into_view(driver, matching_card)
+            time.sleep(0.5)
+            
+            # Click Start or Resume to open the worksheet
+            success = finder._click_start(matching_card, topic_name, ws_title)
+            if not success:
+                log_msg(f"[ERROR] Failed to open worksheet: {ws_title} ({target_ws_id})")
+                continue
+                
+            # Answer questions
+            log_msg(f"Opened worksheet {target_ws_id} successfully. Answering questions...")
+            ws_results = answer_worksheet_questions(driver, target_ws_id, all_answers[target_ws_id])
+            save_answering_report_to_db(target_ws_id, topic_name, ws_results, all_answers[target_ws_id])
+            
+            # Exit worksheet and return to worksheet list
+            exit_success = exit_worksheet(driver)
+            if not exit_success:
+                log_msg("[WARN] Exit button not clicked successfully. Attempting fallback URL navigation...")
+                driver.get(config.BASE_URL)
+                time.sleep(5.0)
+                from dashboard import select_student, click_start_learning
+                select_student(driver)
+                click_start_learning(driver)
+                time.sleep(3.0)
+                
+            log_msg(f"[SUCCESS] Finished answering Worksheet: {target_ws_id}")
+            completed_count += 1
+            time.sleep(2.0)
+
+        # Update progress after all completed
+        if state_updater:
+            state_updater(
+                current_ws_id="",
+                current_idx=total_worksheets,
+                completed=completed_count,
+                remaining=0,
+                percent=100.0
+            )
+
         return True
 
     except Exception as exc:
