@@ -1421,30 +1421,9 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
             print(f"Question {q}: {status} (Submitted: {sub_ans})")
     print()
     
-    # After answering all questions, wait for the worksheet completion/summary page
-    # to appear before returning so exit_worksheet can handle it properly
-    log.info("All questions answered. Waiting for worksheet completion page...")
-    print("Waiting for worksheet completion page...")
-    start_completion = time.time()
-    while time.time() - start_completion < 30.0:
-        try:
-            js_completion_check = """
-            let buttons = Array.from(document.querySelectorAll('button, a, [role="button"], div, span'));
-            for (let btn of buttons) {
-                let text = (btn.innerText || btn.textContent || "").trim().toLowerCase();
-                if (text === 'keep learning' || text.includes('keep learning') ||
-                    text === 'submit as is' || text.includes('submit as is')) {
-                    return true;
-                }
-            }
-            return false;
-            """
-            if driver.execute_script(js_completion_check):
-                log.info("Completion page detected.")
-                print("Completion page detected.")
-                break
-        except Exception:
-            pass
-        time.sleep(0.5)
-    
+    # Brief wait for the last answer submission to register before exit_worksheet
+    # handles the completion flow (Submit as is → Success popup → Summary → Keep Learning)
+    time.sleep(1.5)
+
     return results
+
