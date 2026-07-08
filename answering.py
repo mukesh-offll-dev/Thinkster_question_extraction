@@ -906,7 +906,14 @@ def handle_cloze_and_drag_drop(driver: WebDriver, answers: list, active_item: We
                 mathquill_idx += 1
                 
                 scroll_into_view(driver, mq_span)
-                driver.execute_script("arguments[0].click();", mq_span)
+                try:
+                    mq_span.click()
+                except Exception:
+                    driver.execute_script("arguments[0].click();", mq_span)
+                try:
+                    driver.execute_script("arguments[0].focus();", mq_span)
+                except Exception:
+                    pass
                 time.sleep(0.5)
                 
                 js_write_latex = """
@@ -958,6 +965,15 @@ def handle_cloze_and_drag_drop(driver: WebDriver, answers: list, active_item: We
                 if input_idx < len(text_inputs):
                     target_el = text_inputs[input_idx]
                     scroll_into_view(driver, target_el)
+                    try:
+                        target_el.click()
+                    except Exception:
+                        driver.execute_script("arguments[0].click();", target_el)
+                    try:
+                        driver.execute_script("arguments[0].focus();", target_el)
+                    except Exception:
+                        pass
+                    time.sleep(0.5)
                     target_el.clear()
                     target_el.send_keys(ans)
                     action_done = True
@@ -999,7 +1015,14 @@ def handle_text_inputs(driver: WebDriver, answer: str, active_item: WebElement =
     for field in all_fields:
         try:
             scroll_into_view(driver, field)
-            driver.execute_script("arguments[0].click();", field)
+            try:
+                field.click()
+            except Exception:
+                driver.execute_script("arguments[0].click();", field)
+            try:
+                driver.execute_script("arguments[0].focus();", field)
+            except Exception:
+                pass
             time.sleep(1.0)
             
             # Wait up to 3.0 seconds for the virtual keypad to appear
