@@ -378,34 +378,53 @@ def exit_worksheet(driver: WebDriver) -> bool:
     log.info("Attempting to exit the worksheet...")
     print("\nExiting current worksheet...")
 
-    # Check for "Keep Learning" button (for finished worksheet/summary page)
-    try:
-        js_summary = """
-        let buttons = Array.from(document.querySelectorAll('button, a, [role="button"], div, span'));
-        for (let btn of buttons) {
-            let text = (btn.innerText || btn.textContent || "").trim().toLowerCase();
-            if (text === 'keep learning') {
-                btn.click();
-                return true;
+    # 1. Wait for and handle "Submit As Is" if visible (wait up to 5 seconds)
+    start_submit_as_is = time.time()
+    while time.time() - start_submit_as_is < 5.0:
+        try:
+            js_submit_as_is = """
+            let buttons = Array.from(document.querySelectorAll('button, a, [role="button"], div, span'));
+            for (let btn of buttons) {
+                let text = (btn.innerText || btn.textContent || "").trim().toLowerCase();
+                if (text === 'submit as is' || text.includes('submit as is')) {
+                    btn.click();
+                    return true;
+                }
             }
-        }
-        for (let btn of buttons) {
-            let text = (btn.innerText || btn.textContent || "").trim().toLowerCase();
-            if (text.includes('keep learning')) {
-                btn.click();
-                return true;
+            return false;
+            """
+            if driver.execute_script(js_submit_as_is):
+                log.info("Found and clicked 'Submit As Is' button.")
+                print("Clicked 'Submit As Is' button.")
+                time.sleep(4.0)
+                break
+        except Exception:
+            pass
+        time.sleep(0.5)
+
+    # 2. Wait for and handle "Keep Learning" if visible (wait up to 8 seconds)
+    start_keep_learning = time.time()
+    while time.time() - start_keep_learning < 8.0:
+        try:
+            js_summary = """
+            let buttons = Array.from(document.querySelectorAll('button, a, [role="button"], div, span'));
+            for (let btn of buttons) {
+                let text = (btn.innerText || btn.textContent || "").trim().toLowerCase();
+                if (text === 'keep learning' || text.includes('keep learning')) {
+                    btn.click();
+                    return true;
+                }
             }
-        }
-        return false;
-        """
-        is_summary = driver.execute_script(js_summary)
-        if is_summary:
-            log.info("Found and clicked 'Keep Learning' button on summary/completion page.")
-            print("Clicked 'Keep Learning' to exit completion page.")
-            time.sleep(5.0)
-            return True
-    except Exception as e:
-        log.warning("Error checking for summary page 'Keep Learning' button: %s", e)
+            return false;
+            """
+            if driver.execute_script(js_summary):
+                log.info("Found and clicked 'Keep Learning' button on summary/completion page.")
+                print("Clicked 'Keep Learning' to exit completion page.")
+                time.sleep(5.0)
+                return True
+        except Exception:
+            pass
+        time.sleep(0.5)
     
     js_code = """
     function clickExit() {

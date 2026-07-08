@@ -1270,8 +1270,19 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
             os.makedirs(screenshot_dir, exist_ok=True)
             screenshot_path = os.path.join(screenshot_dir, f"Question_{q_no}_graded.png")
             try:
+                # Ensure we are currently viewing the correct question to take the screenshot
+                if get_current_question_number(driver) != q_no:
+                    click_question_dot(driver, q_no)
+                    wait_for_active_question(driver, q_no)
+                    time.sleep(1.0)
+                    
+                active_item = get_active_container(driver, q_no)
+                if active_item:
+                    scroll_into_view(driver, active_item)
+                    time.sleep(0.5)
+                    
                 driver.save_screenshot(screenshot_path)
-                log.info("Saved graded screenshot: %s", screenshot_path)
+                log.info("Saved graded screenshot for Question %d: %s", q_no, screenshot_path)
             except Exception as e:
                 log.error("Failed to save graded screenshot: %s", e)
                 screenshot_path = None
@@ -1279,7 +1290,14 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
         # Try to extract the website's correct answer if it's not correct
         website_correct_answer = None
         if correctness != "correct":
-            website_correct_answer = extract_website_correct_answer(driver)
+            try:
+                if get_current_question_number(driver) != q_no:
+                    click_question_dot(driver, q_no)
+                    wait_for_active_question(driver, q_no)
+                    time.sleep(1.0)
+                website_correct_answer = extract_website_correct_answer(driver)
+            except Exception:
+                pass
             if website_correct_answer:
                 log.info("Extracted correct answer from website: %s", website_correct_answer)
                 print(f"-> Website expects: {website_correct_answer}")
@@ -1291,12 +1309,13 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
             "website_correct_answer": website_correct_answer
         }
             
-        # Manually transition if it didn't do so automatically
-        if q_no < num_questions and get_current_question_number(driver) == q_no:
-            log.info("Question %d did not transition automatically. Navigating manually to next question...", q_no)
-            click_question_dot(driver, q_no + 1)
-            wait_for_active_question(driver, q_no + 1)
-            time.sleep(1.5)
+        # Transition to next question
+        if q_no < num_questions:
+            if get_current_question_number(driver) != q_no + 1:
+                log.info("Navigating to next question dot: %d", q_no + 1)
+                click_question_dot(driver, q_no + 1)
+                wait_for_active_question(driver, q_no + 1)
+                time.sleep(1.5)
             
     print(f"\n--- Answering Summary for {worksheet_id} ---")
     for q, res_detail in results.items():

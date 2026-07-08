@@ -475,7 +475,14 @@ def run_automation() -> None:
             
             # Re-locate and expand topic to ensure it is open and visible
             if not is_sidebar:
-                topic_el = finder._find_topic_element(topic_name)
+                topic_el = None
+                start_find = time.time()
+                while time.time() - start_find < 15.0:
+                    topic_el = finder._find_topic_element(topic_name)
+                    if topic_el:
+                        break
+                    time.sleep(1.0)
+                    
                 if not topic_el:
                     print(f"[ERROR] Could not re-locate topic '{topic_name}' during iteration.")
                     worksheet_results[ws_id] = { "title": ws_title, "error": "Could not re-locate topic" }
@@ -951,7 +958,14 @@ def run_answering_for_worksheets(topic_name: str, target_ws_ids: list[str], head
 
             # Re-locate and expand topic to ensure it is open and visible
             if not is_sidebar:
-                topic_el = finder._find_topic_element(topic_name)
+                topic_el = None
+                start_find = time.time()
+                while time.time() - start_find < 15.0:
+                    topic_el = finder._find_topic_element(topic_name)
+                    if topic_el:
+                        break
+                    time.sleep(1.0)
+                    
                 if not topic_el:
                     log_msg(f"[ERROR] Could not re-locate topic '{topic_name}' during iteration.")
                     return False
