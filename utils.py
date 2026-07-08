@@ -378,10 +378,31 @@ def exit_worksheet(driver: WebDriver) -> bool:
     log.info("Attempting to exit the worksheet...")
     print("\nExiting current worksheet...")
 
-    # 1. Wait for and handle "Submit As Is" if visible (wait up to 5 seconds)
-    start_submit_as_is = time.time()
-    while time.time() - start_submit_as_is < 5.0:
+    # Wait and check completion flow in a unified loop (up to 15 seconds)
+    start_completion_wait = time.time()
+    clicked_keep_learning = False
+    
+    while time.time() - start_completion_wait < 15.0:
         try:
+            # 1. Check for Keep Learning first (direct completion or after Submit As Is click)
+            js_keep_learning = """
+            let buttons = Array.from(document.querySelectorAll('button, a, [role="button"], div, span'));
+            for (let btn of buttons) {
+                let text = (btn.innerText || btn.textContent || "").trim().toLowerCase();
+                if (text === 'keep learning' || text.includes('keep learning')) {
+                    btn.click();
+                    return true;
+                }
+            }
+            return false;
+            """
+            if driver.execute_script(js_keep_learning):
+                log.info("Found and clicked 'Keep Learning' button.")
+                print("Clicked 'Keep Learning' to exit completion page.")
+                clicked_keep_learning = True
+                break
+                
+            # 2. Check for Submit As Is if Keep Learning is not yet visible
             js_submit_as_is = """
             let buttons = Array.from(document.querySelectorAll('button, a, [role="button"], div, span'));
             for (let btn of buttons) {
@@ -396,35 +417,33 @@ def exit_worksheet(driver: WebDriver) -> bool:
             if driver.execute_script(js_submit_as_is):
                 log.info("Found and clicked 'Submit As Is' button.")
                 print("Clicked 'Submit As Is' button.")
-                time.sleep(4.0)
-                break
-        except Exception:
-            pass
+                time.sleep(3.0) # wait for summary page to transition
+                
+        except Exception as e:
+            log.warning("Error checking completion buttons: %s", e)
         time.sleep(0.5)
 
-    # 2. Wait for and handle "Keep Learning" if visible (wait up to 8 seconds)
-    start_keep_learning = time.time()
-    while time.time() - start_keep_learning < 8.0:
-        try:
-            js_summary = """
-            let buttons = Array.from(document.querySelectorAll('button, a, [role="button"], div, span'));
-            for (let btn of buttons) {
-                let text = (btn.innerText || btn.textContent || "").trim().toLowerCase();
-                if (text === 'keep learning' || text.includes('keep learning')) {
-                    btn.click();
-                    return true;
-                }
-            }
-            return false;
-            """
-            if driver.execute_script(js_summary):
-                log.info("Found and clicked 'Keep Learning' button on summary/completion page.")
-                print("Clicked 'Keep Learning' to exit completion page.")
-                time.sleep(5.0)
-                return True
-        except Exception:
-            pass
-        time.sleep(0.5)
+    if clicked_keep_learning:
+        # Wait up to 15 seconds for Topic/Dashboard page to load and be visible
+        start_topic_wait = time.time()
+        topic_loaded = False
+        while time.time() - start_topic_wait < 15.0:
+            try:
+                elements = driver.find_elements(By.CSS_SELECTOR, "[class*='sidebar'], [class*='topic'], .lrn-btn, [class*='dashboard']")
+                visible_elements = [el for el in elements if el.is_displayed()]
+                if visible_elements:
+                    topic_loaded = True
+                    break
+            except Exception:
+                pass
+            time.sleep(0.5)
+        if topic_loaded:
+            log.info("Topic Selection page is fully visible.")
+            print("Topic Selection page loaded.")
+        else:
+            log.warning("Timed out waiting for Topic Selection page to load.")
+        time.sleep(2.0)
+        return True
     
     js_code = """
     function clickExit() {

@@ -220,6 +220,86 @@ def handle_matrix(driver: WebDriver, answers: list, active_item: WebElement = No
             answers = matches
         elif len(matches) > 1:
             answers = matches
+
+    if not active_item:
+        active_item = get_active_container(driver, 1)
+
+    if active_item:
+        js_code = """
+        function handleMatrixJS(activeItem, answers) {
+            let table = activeItem.querySelector('table, [class*="matrix"]');
+            if (!table) return false;
+            
+            let headers = Array.from(table.querySelectorAll('thead th, thead td, tr th, tr td'));
+            let trueColIdx = -1;
+            let falseColIdx = -1;
+            
+            headers.forEach((h, idx) => {
+                let txt = (h.innerText || h.textContent || "").trim().toLowerCase();
+                if (txt === 'true' || txt === 'yes' || txt === 'y' || txt === 't') {
+                    trueColIdx = idx;
+                } else if (txt === 'false' || txt === 'no' || txt === 'f' || txt === 'n') {
+                    falseColIdx = idx;
+                }
+            });
+            
+            if (trueColIdx === -1) {
+                let headerRow = table.querySelector('tr');
+                if (headerRow) {
+                    let headerCells = Array.from(headerRow.querySelectorAll('th, td'));
+                    headerCells.forEach((c, idx) => {
+                        let txt = (c.innerText || c.textContent || "").trim().toLowerCase();
+                        if (txt === 'true' || txt === 'yes' || txt === 'y' || txt === 't') {
+                            trueColIdx = idx;
+                        } else if (txt === 'false' || txt === 'no' || txt === 'f' || txt === 'n') {
+                            falseColIdx = idx;
+                        }
+                    });
+                }
+            }
+            
+            if (trueColIdx === -1) trueColIdx = 1;
+            if (falseColIdx === -1) falseColIdx = 2;
+            
+            let rows = Array.from(table.querySelectorAll('tbody tr, tr')).filter(r => {
+                return r.querySelector('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]');
+            });
+            
+            if (rows.length === 0) return false;
+            
+            let clickedAny = false;
+            rows.forEach((row, rowIdx) => {
+                if (rowIdx >= answers.length) return;
+                
+                let val = answers[rowIdx].trim().toLowerCase();
+                let isTrue = (val === 'true' || val === 't' || val === 'yes' || val === 'y');
+                let targetColIdx = isTrue ? trueColIdx : falseColIdx;
+                
+                let cells = Array.from(row.querySelectorAll('td, th'));
+                if (targetColIdx < cells.length) {
+                    let cell = cells[targetColIdx];
+                    let inp = cell.querySelector('input, [role="radio"], [role="checkbox"]');
+                    if (inp) {
+                        inp.click();
+                        clickedAny = true;
+                    } else {
+                        cell.click();
+                        clickedAny = true;
+                    }
+                }
+            });
+            return clickedAny;
+        }
+        return handleMatrixJS(arguments[0], arguments[1]);
+        """
+        try:
+            success = driver.execute_script(js_code, active_item, answers)
+            if success:
+                log.info("Matrix answered successfully via JS.")
+                return True
+        except Exception as e:
+            log.warning("Matrix JS execution failed: %s. Falling back to python...", e)
+
     # Find the active question container if possible to avoid matching other questions' elements
     if active_item:
         rows = active_item.find_elements(By.CSS_SELECTOR, "tr, [class*='lrn-matrix-row']")
@@ -312,15 +392,13 @@ def handle_matrix(driver: WebDriver, answers: list, active_item: WebElement = No
                 pass
 
             if not clicked:
-                # Fallback to clicking label if input click failed
                 try:
-                    inp_id = target_input.get_attribute("id")
-                    if inp_id:
-                        label = row.find_element(By.CSS_SELECTOR, f"label[for='{inp_id}']")
-                        driver.execute_script("arguments[0].click();", label)
-                        clicked = True
-                except Exception:
-                    pass
+                    # Try clicking parent TD/element if direct input click failed
+                    parent = target_input.find_element(By.XPATH, "..")
+                    driver.execute_script("arguments[0].click();", parent)
+                    clicked = True
+                except Exception as e:
+                    log.warning("Failed to select matrix option for row %d: %s", idx, e)
 
             if clicked:
                 log.info("Selected matrix option for row %d matching '%s'", idx, val_norm)
@@ -658,6 +736,7 @@ def handle_cloze_and_drag_drop(driver: WebDriver, answers: list, active_item: We
         
     js_get_slots = """
     function getActiveSlots(activeItem) {
+        let uniqueInputIds = [];
         let slots = {};
         let elements = activeItem.querySelectorAll('.lrn_cloze_response, .lrn_dropzone, .lrn_assoc_col2, .lrn-response-input, [data-inputid]');
         
@@ -666,9 +745,9 @@ def handle_cloze_and_drag_drop(driver: WebDriver, answers: list, active_item: We
             if (inputId === null || inputId === undefined) return;
             
             let classes = el.className || "";
-            // We do NOT skip lrn_invisible in slot definition to count all backing slots correctly
             
             if (!slots[inputId]) {
+                uniqueInputIds.push(inputId);
                 slots[inputId] = {
                     inputId: parseInt(inputId, 10),
                     elements: []
@@ -691,7 +770,7 @@ def handle_cloze_and_drag_drop(driver: WebDriver, answers: list, active_item: We
             });
         });
         
-        return Object.values(slots).sort((a, b) => a.inputId - b.inputId);
+        return uniqueInputIds.map(id => slots[id]);
     }
     return getActiveSlots(arguments[0]);
     """
