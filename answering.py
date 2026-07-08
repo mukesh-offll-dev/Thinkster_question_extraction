@@ -230,38 +230,21 @@ def handle_matrix(driver: WebDriver, answers: list, active_item: WebElement = No
             let table = activeItem.querySelector('table, [class*="matrix"]');
             if (!table) return false;
             
-            let headers = Array.from(table.querySelectorAll('thead th, thead td, tr th, tr td'));
-            let trueColIdx = -1;
-            let falseColIdx = -1;
+            let headerRow = table.querySelector('thead tr, tr:first-child');
+            if (!headerRow) return false;
             
-            headers.forEach((h, idx) => {
-                let txt = (h.innerText || h.textContent || "").trim().toLowerCase();
-                if (txt === 'true' || txt === 'yes' || txt === 'y' || txt === 't') {
-                    trueColIdx = idx;
-                } else if (txt === 'false' || txt === 'no' || txt === 'f' || txt === 'n') {
-                    falseColIdx = idx;
+            let headerCells = Array.from(headerRow.querySelectorAll('th, td'));
+            let colIndexMap = {};
+            
+            headerCells.forEach((c, idx) => {
+                let txt = (c.innerText || c.textContent || "").trim().toLowerCase();
+                if (txt) {
+                    colIndexMap[txt] = idx;
                 }
             });
             
-            if (trueColIdx === -1) {
-                let headerRow = table.querySelector('tr');
-                if (headerRow) {
-                    let headerCells = Array.from(headerRow.querySelectorAll('th, td'));
-                    headerCells.forEach((c, idx) => {
-                        let txt = (c.innerText || c.textContent || "").trim().toLowerCase();
-                        if (txt === 'true' || txt === 'yes' || txt === 'y' || txt === 't') {
-                            trueColIdx = idx;
-                        } else if (txt === 'false' || txt === 'no' || txt === 'f' || txt === 'n') {
-                            falseColIdx = idx;
-                        }
-                    });
-                }
-            }
-            
-            if (trueColIdx === -1) trueColIdx = 1;
-            if (falseColIdx === -1) falseColIdx = 2;
-            
             let rows = Array.from(table.querySelectorAll('tbody tr, tr')).filter(r => {
+                if (r === headerRow) return false;
                 return r.querySelector('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]');
             });
             
@@ -271,9 +254,40 @@ def handle_matrix(driver: WebDriver, answers: list, active_item: WebElement = No
             rows.forEach((row, rowIdx) => {
                 if (rowIdx >= answers.length) return;
                 
-                let val = answers[rowIdx].trim().toLowerCase();
-                let isTrue = (val === 'true' || val === 't' || val === 'yes' || val === 'y');
-                let targetColIdx = isTrue ? trueColIdx : falseColIdx;
+                let dbAns = answers[rowIdx].trim().toLowerCase();
+                let targetColIdx = -1;
+                
+                if (colIndexMap[dbAns] !== undefined) {
+                    targetColIdx = colIndexMap[dbAns];
+                } else {
+                    for (let label in colIndexMap) {
+                        if (dbAns.includes(label) || label.includes(dbAns) || 
+                            (dbAns === 't' && label === 'true') || 
+                            (dbAns === 'f' && label === 'false') ||
+                            (dbAns === 'y' && label === 'yes') ||
+                            (dbAns === 'n' && label === 'no')) {
+                            targetColIdx = colIndexMap[label];
+                            break;
+                        }
+                    }
+                }
+                
+                if (targetColIdx === -1) {
+                    let isTrueVal = (dbAns === 'true' || dbAns === 't' || dbAns === 'yes' || dbAns === 'y' || dbAns === 'positive' || dbAns === 'rational' || dbAns === 'real' || dbAns === 'even');
+                    headerCells.forEach((c, idx) => {
+                        let txt = (c.innerText || c.textContent || "").trim().toLowerCase();
+                        if (isTrueVal && (txt === 'true' || txt === 'yes' || txt === 'positive' || txt === 'rational' || txt === 'real' || txt === 'even')) {
+                            targetColIdx = idx;
+                        } else if (!isTrueVal && (txt === 'false' || txt === 'no' || txt === 'negative' || txt === 'irrational' || txt === 'non-real' || txt === 'odd')) {
+                            targetColIdx = idx;
+                        }
+                    });
+                }
+                
+                if (targetColIdx === -1) {
+                    let isTrueVal = (dbAns === 'true' || dbAns === 't' || dbAns === 'yes' || dbAns === 'y' || dbAns === 'positive' || dbAns === 'rational' || dbAns === 'real' || dbAns === 'even');
+                    targetColIdx = isTrueVal ? 1 : 2;
+                }
                 
                 let cells = Array.from(row.querySelectorAll('td, th'));
                 if (targetColIdx < cells.length) {

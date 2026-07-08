@@ -490,23 +490,46 @@ def run_automation() -> None:
                 finder._expand_topic(topic_el)
                 time.sleep(1.0)
             
-            # Re-collect cards and find the matching card
-            if is_sidebar:
-                topic_container = driver.find_element(By.TAG_NAME, "body")
-            else:
-                try:
-                    topic_container = driver.execute_script("return arguments[0].parentElement;", topic_el)
-                    if not topic_container:
-                        topic_container = topic_el
-                except Exception:
-                    topic_container = topic_el
-            cards = finder._collect_cards(topic_container)
+            # Re-collect cards and find the matching card — with up to 5 retries
             matching_card = None
-            for card in cards:
-                card_id, _ = finder.extract_worksheet_id_and_title(card)
-                if card_id == ws_id:
-                    matching_card = card
+            for card_attempt in range(5):
+                if is_sidebar:
+                    topic_container = driver.find_element(By.TAG_NAME, "body")
+                else:
+                    try:
+                        topic_container = driver.execute_script("return arguments[0].parentElement;", topic_el)
+                        if not topic_container:
+                            topic_container = topic_el
+                    except Exception:
+                        topic_container = topic_el
+
+                # Expand sub-sections so all cards are rendered
+                finder._expand_subsections(topic_container)
+                time.sleep(1.5)
+
+                cards = finder._collect_cards(topic_container)
+                for card in cards:
+                    card_id, _ = finder.extract_worksheet_id_and_title(card)
+                    if card_id == ws_id:
+                        matching_card = card
+                        break
+
+                if matching_card:
                     break
+
+                print(f"[WARN] Card for {ws_id} not found on attempt {card_attempt + 1}/5. Retrying...")
+                # Re-locate and re-expand topic before next attempt
+                if not is_sidebar:
+                    topic_el = None
+                    start_find = time.time()
+                    while time.time() - start_find < 10.0:
+                        topic_el = finder._find_topic_element(topic_name)
+                        if topic_el:
+                            break
+                        time.sleep(1.0)
+                    if topic_el:
+                        finder._expand_topic(topic_el)
+                time.sleep(2.0)
                     
             if not matching_card:
                 print(f"[ERROR] Could not find card for Worksheet ID: {ws_id}. Skipping.")
@@ -984,16 +1007,48 @@ def run_answering_for_worksheets(topic_name: str, target_ws_ids: list[str], head
             finder._expand_subsections(topic_container)
             time.sleep(1.5)
             
-            # Re-collect cards and find the matching card
-            cards = finder._collect_cards(topic_container)
+            # Re-collect cards and find the matching card — with up to 5 retries
             matching_card = None
             ws_title = target_ws_id  # Fallback title
-            for card in cards:
-                card_id, card_title = finder.extract_worksheet_id_and_title(card)
-                if card_id == target_ws_id:
-                    matching_card = card
-                    ws_title = card_title
+            for card_attempt in range(5):
+                if is_sidebar:
+                    topic_container = driver.find_element(By.TAG_NAME, "body")
+                else:
+                    try:
+                        topic_container = driver.execute_script("return arguments[0].parentElement;", topic_el)
+                        if not topic_container:
+                            topic_container = topic_el
+                    except Exception:
+                        topic_container = topic_el
+
+                # Expand sub-sections so all cards are rendered
+                finder._expand_subsections(topic_container)
+                time.sleep(1.5)
+
+                cards = finder._collect_cards(topic_container)
+                for card in cards:
+                    card_id, card_title = finder.extract_worksheet_id_and_title(card)
+                    if card_id == target_ws_id:
+                        matching_card = card
+                        ws_title = card_title
+                        break
+
+                if matching_card:
                     break
+
+                log_msg(f"[WARN] Card for {target_ws_id} not found on attempt {card_attempt + 1}/5. Retrying...")
+                # Re-locate and re-expand topic before next attempt
+                if not is_sidebar:
+                    topic_el = None
+                    start_find = time.time()
+                    while time.time() - start_find < 10.0:
+                        topic_el = finder._find_topic_element(topic_name)
+                        if topic_el:
+                            break
+                        time.sleep(1.0)
+                    if topic_el:
+                        finder._expand_topic(topic_el)
+                time.sleep(2.0)
             
             if not matching_card:
                 log_msg(f"[ERROR] Could not find card for Worksheet ID: {target_ws_id}. Skipping.")
