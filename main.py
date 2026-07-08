@@ -508,7 +508,14 @@ def extract_screenshots_for_worksheet(topic_name: str, target_ws_id: str, headle
         if not exit_success:
             log_msg("[WARN] Exit button not clicked successfully. Attempting fallback URL navigation...")
             driver.get(config.BASE_URL)
-            time.sleep(5.0)
+            time.sleep(4.0)
+            try:
+                from dashboard import select_student, click_start_learning
+                select_student(driver)
+                click_start_learning(driver)
+                time.sleep(3.0)
+            except Exception as fe:
+                log_msg(f"[ERROR] Failed fallback dashboard navigation: {fe}")
             
         log_msg(f"[SUCCESS] Finished capturing screenshots for Worksheet: {target_ws_id}")
         return True
@@ -660,7 +667,14 @@ def extract_screenshots_for_worksheets_batch(topic_name: str, target_ws_ids: lis
                 if not exit_success:
                     log_msg("[WARN] Exit button not clicked successfully. Attempting fallback URL navigation...")
                     driver.get(config.BASE_URL)
-                    time.sleep(5.0)
+                    time.sleep(4.0)
+                    try:
+                        from dashboard import select_student, click_start_learning
+                        select_student(driver)
+                        click_start_learning(driver)
+                        time.sleep(3.0)
+                    except Exception as fe:
+                        log_msg(f"[ERROR] Failed fallback dashboard navigation: {fe}")
                     
                 log_msg(f"[SUCCESS] Finished capturing screenshots for Worksheet: {target_ws_id}")
                 successful_ws_ids.append(target_ws_id)
@@ -670,9 +684,13 @@ def extract_screenshots_for_worksheets_batch(topic_name: str, target_ws_ids: lis
                 # Try to navigate back to dashboard to recover
                 try:
                     driver.get(config.BASE_URL)
-                    time.sleep(5.0)
-                except Exception:
-                    pass
+                    time.sleep(4.0)
+                    from dashboard import select_student, click_start_learning
+                    select_student(driver)
+                    click_start_learning(driver)
+                    time.sleep(3.0)
+                except Exception as fe:
+                    log_msg(f"[ERROR] Failed recovery dashboard navigation: {fe}")
 
     except Exception as exc:
         log_msg(f"[ERROR] Batch extraction critical error: {exc}")

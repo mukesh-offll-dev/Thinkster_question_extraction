@@ -372,122 +372,154 @@ def prompt_worksheet_id() -> str:
 
 def exit_worksheet(driver: WebDriver) -> bool:
     """
-    Handles the full worksheet completion flow based on the confirmed browser behavior:
-
-    Flow A (unanswered questions present):
-      1. "Submit Worksheet" modal appears → click "Submit as is"
-      2. "Success! Worksheet submitted successfully! Redirecting to summary..." popup
-      3. Browser redirects to /summary URL
-      4. Summary page shows "Keep Learning" button → click it
-      5. Topic/Learning page loads
-
-    Flow B (all questions answered — auto-submitted):
-      1. "Success! Worksheet submitted successfully! Redirecting to summary..." popup
-      2. Browser redirects to /summary URL
-      3. Summary page shows "Keep Learning" button → click it
-      4. Topic/Learning page loads
-
-    Uses WebDriverWait with no fixed sleep timers.
-    Returns True on success, False on failure.
+    Handles both worksheet completion/submission and uncompleted practice exits.
+    
+    1. If already on the summary page (/summary or "Keep Learning" visible):
+       - Click "Keep Learning" and wait for Topic page to load.
+       
+    2. Otherwise, we are on the practice page:
+       - Find and click the top-left Exit button.
+       - Wait up to 3 seconds for a confirmation modal.
+       - If a modal appears:
+         - Click "Submit as is", "Exit", "Confirm", "Yes", "Leave", or "OK" to proceed.
+       - Wait for URL to leave `/practice` or `/summary`.
+       - If it redirects to `/summary` or shows a "Submit Worksheet" modal, handle it.
+       - Wait for Topic/Learning page to load.
     """
-    log.info("Starting worksheet completion flow...")
-    print("\n--- Worksheet Completion Flow ---")
+    log.info("Starting exit_worksheet flow...")
+    print("\n--- Exiting Worksheet ---")
 
-    # -----------------------------------------------------------------------
-    # Step 1: Handle "Submit Worksheet" modal if it appears
-    #         Modal contains "Submit as is" and "Continue worksheet" buttons.
-    #         The modal appears only when some questions were skipped/unanswered.
-    # -----------------------------------------------------------------------
+    # Step A: Check if we are already on the summary/completed page
+    is_completed_page = "/summary" in driver.current_url
+    if not is_completed_page:
+        try:
+            is_completed_page = driver.execute_script("""
+                var buttons = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+                for (var btn of buttons) {
+                    var txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+                    if (txt === 'keep learning' || txt.includes('keep learning')) {
+                        var rect = btn.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) return true;
+                    }
+                }
+                return false;
+            """)
+        except Exception:
+            pass
+
+    if is_completed_page:
+        log.info("Worksheet already completed. Navigating to summary page keep learning...")
+        return _click_keep_learning_and_wait(driver)
+
+    # Step B: We are on the active practice page. Attempt to click the top-left Exit button.
+    print("Locating top-left Exit button...")
+    exit_clicked = False
     try:
-        # Wait up to 8 seconds for the "Submit Worksheet" modal to appear
-        submit_modal_present = False
-        deadline = time.time() + 8.0
+        # Search for a button in the top left corner (X coordinate <= 180, Y coordinate <= 120)
+        exit_btn = driver.execute_script("""
+            var candidates = Array.from(document.querySelectorAll('button, a, [role="button"], .lrn-btn, [class*="exit" i]'));
+            for (var el of candidates) {
+                var rect = el.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.top <= 120 && rect.left >= 0 && rect.left <= 180) {
+                    var txt = (el.innerText || el.textContent || "").trim().toLowerCase();
+                    if (txt.includes("exit") || txt.includes("back") || txt.includes("home") || txt.includes("←") || txt === "x") {
+                        return el;
+                    }
+                }
+            }
+            return null;
+        """)
+        if exit_btn:
+            driver.execute_script("arguments[0].click();", exit_btn)
+            exit_clicked = True
+            log.info("Top-left Exit button clicked.")
+            print("✓ Clicked Exit button.")
+        else:
+            # Fallback wider search
+            exit_btn_fallback = driver.execute_script("""
+                var els = Array.from(document.querySelectorAll('button, a'));
+                for (var el of els) {
+                    var txt = (el.innerText || el.textContent || "").trim().toLowerCase();
+                    if (txt === 'exit' || txt.includes('exit')) {
+                        var rect = el.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) return el;
+                    }
+                }
+                return null;
+            """)
+            if exit_btn_fallback:
+                driver.execute_script("arguments[0].click();", exit_btn_fallback)
+                exit_clicked = True
+                log.info("Exit button clicked via text fallback.")
+                print("✓ Clicked Exit button (fallback).")
+    except Exception as e:
+        log.warning("Error clicking Exit button: %s", e)
+
+    if not exit_clicked:
+        log.warning("Could not click Exit button on practice screen.")
+        print("[WARN] Could not find or click the Exit button.")
+        # Proceed anyway, maybe a modal or summary is about to load
+
+    # Step C: Check for any confirmation modal/dialog (appears after clicking Exit)
+    print("Checking for confirmation modals...")
+    try:
+        # Wait up to 4 seconds for a modal dialog
+        deadline = time.time() + 4.0
         while time.time() < deadline:
-            try:
-                # Look for the "Submit as is" button text
-                result = driver.execute_script("""
-                    var buttons = Array.from(document.querySelectorAll('button'));
-                    for (var btn of buttons) {
-                        var txt = (btn.innerText || btn.textContent || '').trim();
-                        if (txt.toLowerCase() === 'submit as is') {
-                            return btn;
+            modal_btn = driver.execute_script("""
+                var modals = Array.from(document.querySelectorAll('.modal, [class*="modal" i], [class*="dialog" i], [class*="overlay" i], [class*="popup" i]'));
+                for (var modal of modals) {
+                    var rect = modal.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                        var buttons = Array.from(modal.querySelectorAll('button, a, [role="button"]'));
+                        for (var btn of buttons) {
+                            var txt = (btn.innerText || btn.textContent || "").trim().toLowerCase();
+                            // Handle exit confirmation or submit-as-is confirmation
+                            if (/submit as is|yes|confirm|exit|quit|leave|ok|sure|agree/i.test(txt)) {
+                                return btn;
+                            }
                         }
                     }
-                    return null;
-                """)
-                if result:
-                    submit_modal_present = True
-                    driver.execute_script("arguments[0].click();", result)
-                    log.info("'Submit as is' button found and clicked.")
-                    print("✓ Clicked 'Submit as is' button.")
-                    break
-            except Exception:
-                pass
+                }
+                return null;
+            """)
+            if modal_btn:
+                driver.execute_script("arguments[0].click();", modal_btn)
+                log.info("Modal confirmation button clicked.")
+                print("✓ Confirmed exit modal dialog.")
+                break
             time.sleep(0.4)
-
-        if submit_modal_present:
-            log.info("Submit Worksheet modal was handled.")
-        else:
-            log.info("No 'Submit Worksheet' modal appeared — worksheet may be auto-submitting.")
-            print("No 'Submit Worksheet' modal — worksheet auto-submitting.")
-
     except Exception as e:
-        log.warning("Error during Submit modal handling: %s", e)
+        log.warning("Error checking for modal dialog: %s", e)
 
-    # -----------------------------------------------------------------------
-    # Step 2: Wait for the "Success! Worksheet submitted successfully!
-    #         Redirecting to summary..." popup to appear, then disappear.
-    #         The popup appears briefly and then the browser redirects.
-    # -----------------------------------------------------------------------
-    print("Waiting for submission success popup...")
+    # Step D: Wait for page redirect or completion summary
+    print("Waiting for page redirection...")
     try:
-        # Wait up to 20 seconds for the success popup text to appear
-        success_popup_seen = False
-        deadline = time.time() + 20.0
-        while time.time() < deadline:
-            try:
-                page_text = driver.execute_script(
-                    "return document.body ? (document.body.innerText || document.body.textContent || '') : '';"
-                )
-                if "redirecting to summary" in page_text.lower() or "submitted successfully" in page_text.lower():
-                    success_popup_seen = True
-                    log.info("Success popup detected.")
-                    print("✓ Success popup detected: 'Worksheet submitted successfully! Redirecting to summary...'")
-                    break
-            except Exception:
-                pass
-            time.sleep(0.3)
-
-        if not success_popup_seen:
-            log.warning("Success popup not detected within 20s — continuing anyway.")
-            print("[WARN] Success popup not detected — proceeding to wait for /summary URL.")
-
-    except Exception as e:
-        log.warning("Error waiting for success popup: %s", e)
-
-    # -----------------------------------------------------------------------
-    # Step 3: Wait for the browser to redirect to the /summary URL
-    # -----------------------------------------------------------------------
-    print("Waiting for redirect to summary page...")
-    try:
-        WebDriverWait(driver, 30).until(
-            lambda d: "/summary" in d.current_url
+        # Wait for either URL change or summary page redirect
+        WebDriverWait(driver, 15).until(
+            lambda d: "/summary" in d.current_url or "/practice" not in d.current_url
         )
-        log.info("Redirected to summary page: %s", driver.current_url)
-        print(f"✓ Summary page loaded: {driver.current_url}")
+        if "/summary" in driver.current_url:
+            log.info("Worksheet redirected to summary page. Handing Keep Learning...")
+            print("✓ Redirected to summary page.")
+            return _click_keep_learning_and_wait(driver)
+        else:
+            log.info("Left practice page. Current URL: %s", driver.current_url)
+            print("✓ Navigated away from practice page.")
     except TimeoutException:
-        log.warning("Timed out waiting for /summary URL. Current URL: %s", driver.current_url)
-        print(f"[WARN] Did not detect /summary URL within 30s. Current: {driver.current_url}")
-        # Still continue — maybe we're already there or the URL format differs
+        log.warning("Page did not redirect after exit click. Current URL: %s", driver.current_url)
+        # Check if "Keep Learning" has appeared in the meantime
+        return _click_keep_learning_and_wait(driver)
 
-    # -----------------------------------------------------------------------
-    # Step 4: Wait for the "Keep Learning" button on the summary page
-    #         and click it.
-    # -----------------------------------------------------------------------
+    # Wait for Topic page/Learning dashboard to load completely
+    return _wait_for_topic_page_load(driver)
+
+
+def _click_keep_learning_and_wait(driver: WebDriver) -> bool:
+    """Helper to wait for and click the 'Keep Learning' button and wait for Topic page."""
     print("Waiting for 'Keep Learning' button on summary page...")
     keep_learning_clicked = False
     try:
-        # Use WebDriverWait with a custom condition for the Keep Learning button
         def keep_learning_button_present(d):
             try:
                 result = d.execute_script("""
@@ -496,9 +528,7 @@ def exit_worksheet(driver: WebDriver) -> bool:
                         var txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
                         if (txt === 'keep learning' || txt.includes('keep learning')) {
                             var rect = btn.getBoundingClientRect();
-                            if (rect.width > 0 && rect.height > 0) {
-                                return btn;
-                            }
+                            if (rect.width > 0 && rect.height > 0) return btn;
                         }
                     }
                     return null;
@@ -507,16 +537,13 @@ def exit_worksheet(driver: WebDriver) -> bool:
             except Exception:
                 return False
 
-        keep_btn = WebDriverWait(driver, 30).until(keep_learning_button_present)
+        keep_btn = WebDriverWait(driver, 25).until(keep_learning_button_present)
         driver.execute_script("arguments[0].click();", keep_btn)
         keep_learning_clicked = True
-        log.info("'Keep Learning' button clicked successfully.")
+        log.info("'Keep Learning' button clicked.")
         print("✓ Clicked 'Keep Learning' button.")
-
     except TimeoutException:
-        log.error("'Keep Learning' button not found within 30s on summary page.")
-        print("[ERROR] 'Keep Learning' button not found. Attempting fallback JS click...")
-        # Fallback: JS click by text search
+        # Fallback JS text search click
         try:
             clicked = driver.execute_script("""
                 var all = Array.from(document.querySelectorAll('button, a, [role="button"]'));
@@ -530,35 +557,27 @@ def exit_worksheet(driver: WebDriver) -> bool:
             """)
             if clicked:
                 keep_learning_clicked = True
-                print("✓ 'Keep Learning' clicked via JS fallback.")
-        except Exception as fe:
-            log.error("JS fallback for Keep Learning also failed: %s", fe)
-
-    except Exception as e:
-        log.error("Error clicking 'Keep Learning': %s", e)
-        print(f"[ERROR] Keep Learning click error: {e}")
+                print("✓ Clicked 'Keep Learning' (fallback).")
+        except Exception:
+            pass
 
     if not keep_learning_clicked:
-        log.error("Could not click 'Keep Learning'. Worksheet completion flow failed.")
-        return False
+        log.warning("Keep Learning button was not clicked. Proceeding to topic wait.")
+        print("[WARN] Could not click 'Keep Learning'.")
+        
+    return _wait_for_topic_page_load(driver)
 
-    # -----------------------------------------------------------------------
-    # Step 5: Wait for the Topic/Learning page to fully load
-    #         (URL must no longer be the /summary or /practice URL)
-    # -----------------------------------------------------------------------
+
+def _wait_for_topic_page_load(driver: WebDriver) -> bool:
+    """Helper to wait for the Topic Selection / Learning dashboard to be visible."""
     print("Waiting for Topic/Learning page to load...")
     try:
-        # Wait for URL to change away from /summary
-        WebDriverWait(driver, 20).until(
+        WebDriverWait(driver, 15).until(
             lambda d: "/summary" not in d.current_url and "/practice" not in d.current_url
         )
-        log.info("Left the summary/practice URL. Current URL: %s", driver.current_url)
-        print(f"✓ Navigated away from summary page. URL: {driver.current_url}")
     except TimeoutException:
-        log.warning("URL did not change from summary/practice within 20s. Continuing anyway.")
-        print("[WARN] URL may still be on practice/summary page.")
+        pass
 
-    # Wait for the topic page DOM elements to be visible
     try:
         def topic_page_loaded(d):
             try:
@@ -573,13 +592,14 @@ def exit_worksheet(driver: WebDriver) -> bool:
                 return False
 
         WebDriverWait(driver, 20).until(topic_page_loaded)
-        log.info("Topic/Learning page is fully visible.")
-        print("✓ Topic/Learning page loaded successfully.")
+        log.info("Topic/Learning page fully loaded.")
+        print("✓ Topic Selection page loaded successfully.")
+        time.sleep(2.0) # Settle down time
+        return True
     except TimeoutException:
-        log.warning("Timed out waiting for Topic page DOM elements. Continuing anyway.")
-        print("[WARN] Topic page DOM not fully detected — proceeding.")
-
-    return True
+        log.warning("Timed out waiting for Topic Selection page load.")
+        print("[WARN] Topic Selection page elements not fully detected.")
+        return False
 
 
 
