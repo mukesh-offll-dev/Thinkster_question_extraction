@@ -97,21 +97,22 @@ def load_answers_from_db(worksheet_id: str) -> Optional[dict]:
                                 except Exception:
                                     pass
                                     
-                        if isinstance(val, str) and val.startswith("[") and val.endswith("]"):
-                            try:
-                                loaded = json.loads(val)
-                                if isinstance(loaded, list):
-                                    val = [str(x) if isinstance(x, bool) else x for x in loaded]
-                                else:
-                                    val = loaded
-                            except Exception:
-                                pass
-                        elif "," in val_str or "\n" in val_str:
-                            if not (val_str.startswith("(") and val_str.endswith(")")) and not (val_str.startswith("[") and val_str.endswith("]")):
-                                parts = [p.strip() for p in re.split(r'[,\n]', val_str) if p.strip()]
-                                val = [str(x) if isinstance(x, bool) else x for x in parts]
-                        else:
-                            val = val_str
+                        if isinstance(val, str):
+                            if val.startswith("[") and val.endswith("]"):
+                                try:
+                                    loaded = json.loads(val)
+                                    if isinstance(loaded, list):
+                                        val = [str(x) if isinstance(x, bool) else x for x in loaded]
+                                    else:
+                                        val = loaded
+                                except Exception:
+                                    pass
+                            elif "," in val_str or "\n" in val_str:
+                                if not (val_str.startswith("(") and val_str.endswith(")")) and not (val_str.startswith("[") and val_str.endswith("]")):
+                                    parts = [p.strip() for p in re.split(r'[,\n]', val_str) if p.strip()]
+                                    val = [str(x) if isinstance(x, bool) else x for x in parts]
+                            else:
+                                val = val_str
                     answers[q_num] = val
         
         if answers:

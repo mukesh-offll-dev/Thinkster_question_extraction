@@ -132,47 +132,85 @@ def wait_for_active_question(driver: WebDriver, target_q: int, timeout: int = 15
 # Input handlers
 # ---------------------------------------------------------------------------
 
-def handle_mcq(driver: WebDriver, answer: str) -> bool:
-    """Select option for MCQ question."""
-    options = driver.find_elements(By.CSS_SELECTOR, ".lrn-mcq-option, [class*='mcq-option']")
+def handle_mcq(driver: WebDriver, answer, active_item: WebElement = None) -> bool:
+    """Select option(s) for MCQ or Multi-select MCQ question."""
+    if active_item:
+        options = active_item.find_elements(By.CSS_SELECTOR, ".lrn-mcq-option, [class*='mcq-option']")
+    else:
+        options = driver.find_elements(By.CSS_SELECTOR, ".lrn-mcq-option, [class*='mcq-option']")
+        
     visible_options = [o for o in options if o.is_displayed()]
     if not visible_options:
         return False
         
-    log.info("MCQ detected. Visible options: %d", len(visible_options))
-    target_idx = None
+    log.info("MCQ/Multi-select detected. Visible options: %d", len(visible_options))
     
-    # 1. Map letters A, B, C, D... to indices
-    ans_clean = answer.strip().upper()
-    if len(ans_clean) == 1 and ans_clean in "ABCDEFGHIJ":
-        target_idx = ord(ans_clean) - ord("A")
-    
-    # 2. Map text content fallback
-    if target_idx is None or target_idx >= len(visible_options):
-        # Fuzzy match option text
-        for idx, opt in enumerate(visible_options):
-            if answer.lower() in opt.text.strip().lower():
-                target_idx = idx
-                break
-                
-    if target_idx is None:
-        target_idx = 0  # Default fallback
+    # 1. Parse the answer(s) into a list of strings
+    if isinstance(answer, list):
+        answers_list = [str(a).strip() for a in answer]
+    elif isinstance(answer, str):
+        # Check if it is a list-like string or comma-separated
+        val_str = answer.strip()
+        if val_str.startswith("[") and val_str.endswith("]"):
+            try:
+                loaded = json.loads(val_str)
+                if isinstance(loaded, list):
+                    answers_list = [str(x).strip() for x in loaded]
+                else:
+                    answers_list = [str(loaded).strip()]
+            except Exception:
+                answers_list = [p.strip() for p in val_str[1:-1].split(",") if p.strip()]
+        else:
+            # Check if it has commas to split (only if not a math formula, e.g. letters)
+            # MCQ options are typically single letters like A, B or short text. 
+            # If it's a comma-separated list of options:
+            if "," in val_str and not any(k in val_str for k in ("\\", "sqrt", "frac", "^")):
+                answers_list = [p.strip() for p in val_str.split(",") if p.strip()]
+            else:
+                answers_list = [val_str]
+    else:
+        answers_list = [str(answer).strip()]
         
-    target_idx = min(target_idx, len(visible_options) - 1)
-    opt = visible_options[target_idx]
+    success = False
     
-    try:
-        inp = opt.find_element(By.TAG_NAME, "input")
-        driver.execute_script("arguments[0].click();", inp)
-        log.info("Selected MCQ option %d", target_idx)
-        return True
-    except Exception as e:
-        log.warning("Failed to select radio input inside option, clicking option element: %s", e)
-        driver.execute_script("arguments[0].click();", opt)
-        return True
+    for ans in answers_list:
+        target_idx = None
+        ans_clean = ans.upper()
+        
+        # Method 1: Check A, B, C, D letters
+        if len(ans_clean) == 1 and ans_clean in "ABCDEFGHIJ":
+            target_idx = ord(ans_clean) - ord("A")
+            
+        # Method 2: Fuzzy match option text
+        if target_idx is None or target_idx >= len(visible_options):
+            for idx, opt in enumerate(visible_options):
+                if ans.lower() in opt.text.strip().lower():
+                    target_idx = idx
+                    break
+                    
+        # Fallback to first option if no match and it's a single value
+        if target_idx is None and len(answers_list) == 1:
+            target_idx = 0
+            
+        if target_idx is not None and target_idx < len(visible_options):
+            opt = visible_options[target_idx]
+            try:
+                inp = opt.find_element(By.CSS_SELECTOR, "input[type='checkbox'], input[type='radio'], input")
+                driver.execute_script("arguments[0].click();", inp)
+                log.info("Selected MCQ option %d (matching '%s')", target_idx, ans)
+                success = True
+            except Exception as e:
+                log.warning("Failed to select input inside option, clicking option element: %s", e)
+                try:
+                    driver.execute_script("arguments[0].click();", opt)
+                    success = True
+                except Exception:
+                    pass
+                    
+    return success
 
 
-def handle_matrix(driver: WebDriver, answers: list) -> bool:
+def handle_matrix(driver: WebDriver, answers: list, active_item: WebElement = None) -> bool:
     """Select options for True/False matrix/table question."""
     # Normalize answers if it is passed as a string representation of a list
     if isinstance(answers, str):
@@ -183,24 +221,27 @@ def handle_matrix(driver: WebDriver, answers: list) -> bool:
         elif len(matches) > 1:
             answers = matches
     # Find the active question container if possible to avoid matching other questions' elements
-    active_container = None
-    for wrapper_class in ["lrn-active", "lrn-item-slide", "lrn-response-validate-wrapper", "lrn-question"]:
-        try:
-            wrappers = driver.find_elements(By.CLASS_NAME, wrapper_class)
-            for w in wrappers:
-                if w.is_displayed():
-                    active_container = w
-                    break
-            if active_container:
-                break
-        except Exception:
-            pass
-
-    if active_container:
-        log.debug("Found active question container: %s", active_container.get_attribute("class"))
-        rows = active_container.find_elements(By.CSS_SELECTOR, "tr, [class*='lrn-matrix-row']")
+    if active_item:
+        rows = active_item.find_elements(By.CSS_SELECTOR, "tr, [class*='lrn-matrix-row']")
     else:
-        rows = driver.find_elements(By.CSS_SELECTOR, "tr, [class*='lrn-matrix-row']")
+        active_container = None
+        for wrapper_class in ["lrn-active", "lrn-item-slide", "lrn-response-validate-wrapper", "lrn-question"]:
+            try:
+                wrappers = driver.find_elements(By.CLASS_NAME, wrapper_class)
+                for w in wrappers:
+                    if w.is_displayed():
+                        active_container = w
+                        break
+                if active_container:
+                    break
+            except Exception:
+                pass
+
+        if active_container:
+            log.debug("Found active question container: %s", active_container.get_attribute("class"))
+            rows = active_container.find_elements(By.CSS_SELECTOR, "tr, [class*='lrn-matrix-row']")
+        else:
+            rows = driver.find_elements(By.CSS_SELECTOR, "tr, [class*='lrn-matrix-row']")
 
     # Filter only rows that contain radio or checkbox options (statement rows)
     valid_rows = []
@@ -799,13 +840,9 @@ def handle_cloze_and_drag_drop(driver: WebDriver, answers: list, active_item: We
                     log.info("Successfully wrote MathQuill via JS: %s", ans)
                     action_done = True
                 else:
-                    log.info("MathQuill JS API failed. Setting backing input index %d directly...", input_idx)
-                    if driver.execute_script(js_set_backing_input_by_index, active_item, input_idx, ans):
-                        action_done = True
-                    else:
-                        log.info("Backing input index write failed. Typing via keypad...")
-                        enter_math_answer(driver, ans)
-                        action_done = True
+                    log.info("MathQuill JS API failed. Typing via keypad...")
+                    enter_math_answer(driver, ans)
+                    action_done = True
             else:
                 log.warning("No visible MathQuill span found matching index %d", mathquill_idx)
             input_idx += 1
@@ -821,11 +858,24 @@ def handle_cloze_and_drag_drop(driver: WebDriver, answers: list, active_item: We
                 
         # Case D: Standard text inputs/textareas
         elif is_standard:
-            log.info("Setting standard input inputIdx=%d to value=%s via JS...", input_idx, ans)
-            if driver.execute_script(js_set_backing_input_by_index, active_item, input_idx, ans):
-                action_done = True
-            else:
-                log.warning("Failed to set standard input value via JS.")
+            log.info("Setting standard input inputIdx=%d to value=%s...", input_idx, ans)
+            try:
+                inputs = active_item.find_elements(By.CSS_SELECTOR, "input:not([type='hidden']), textarea")
+                text_inputs = [i for i in inputs if i.is_displayed() and not i.get_attribute("readonly")]
+                if input_idx < len(text_inputs):
+                    target_el = text_inputs[input_idx]
+                    scroll_into_view(driver, target_el)
+                    target_el.clear()
+                    target_el.send_keys(ans)
+                    action_done = True
+            except Exception as e:
+                log.warning("Failed standard input send_keys: %s. Falling back to JS...", e)
+                
+            if not action_done:
+                if driver.execute_script(js_set_backing_input_by_index, active_item, input_idx, ans):
+                    action_done = True
+                else:
+                    log.warning("Failed to set standard input value via JS.")
             input_idx += 1
                 
         if action_done:
@@ -835,13 +885,17 @@ def handle_cloze_and_drag_drop(driver: WebDriver, answers: list, active_item: We
 
 
 
-def handle_text_inputs(driver: WebDriver, answer: str) -> bool:
+def handle_text_inputs(driver: WebDriver, answer: str, active_item: WebElement = None) -> bool:
     """Type answer into text input boxes and handle custom keypads if shown."""
     # 1. Look for visible editable math fields or standard inputs
-    math_fields = driver.find_elements(By.CSS_SELECTOR, ".mq-editable-field, .lrn-formula-input")
+    if active_item:
+        math_fields = active_item.find_elements(By.CSS_SELECTOR, ".mq-editable-field, .lrn-formula-input")
+        inputs = active_item.find_elements(By.CSS_SELECTOR, "input, textarea, [class*='mq-textarea'] textarea")
+    else:
+        math_fields = driver.find_elements(By.CSS_SELECTOR, ".mq-editable-field, .lrn-formula-input")
+        inputs = driver.find_elements(By.CSS_SELECTOR, "input, textarea, [class*='mq-textarea'] textarea")
+        
     visible_math_fields = [f for f in math_fields if f.is_displayed()]
-    
-    inputs = driver.find_elements(By.CSS_SELECTOR, "input, textarea, [class*='mq-textarea'] textarea")
     visible_inputs = [i for i in inputs if i.is_displayed() and not i.get_attribute("readonly")]
     
     all_fields = visible_math_fields + visible_inputs
@@ -996,21 +1050,22 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
                         except Exception:
                             pass
 
-                if isinstance(val, str) and val.startswith("[") and val.endswith("]"):
-                    try:
-                        loaded = json.loads(val)
-                        if isinstance(loaded, list):
-                            val = [str(x) if isinstance(x, bool) else x for x in loaded]
-                        else:
-                            val = loaded
-                    except Exception:
-                        pass
-                elif "," in val_str or "\n" in val_str:
-                    if not (val_str.startswith("(") and val_str.endswith(")")) and not (val_str.startswith("[") and val_str.endswith("]")):
-                        parts = [p.strip() for p in re.split(r'[,\n]', val_str) if p.strip()]
-                        val = [str(x) if isinstance(x, bool) else x for x in parts]
-                else:
-                    val = val_str
+                if isinstance(val, str):
+                    if val.startswith("[") and val.endswith("]"):
+                        try:
+                            loaded = json.loads(val)
+                            if isinstance(loaded, list):
+                                val = [str(x) if isinstance(x, bool) else x for x in loaded]
+                            else:
+                                val = loaded
+                        except Exception:
+                            pass
+                    elif "," in val_str or "\n" in val_str:
+                        if not (val_str.startswith("(") and val_str.endswith(")")) and not (val_str.startswith("[") and val_str.endswith("]")):
+                            parts = [p.strip() for p in re.split(r'[,\n]', val_str) if p.strip()]
+                            val = [str(x) if isinstance(x, bool) else x for x in parts]
+                    else:
+                        val = val_str
             normalized_answers[str(q_num)] = val
     answers = normalized_answers
 
@@ -1039,12 +1094,6 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
         log.info("--- Question %d of %d ---", q_no, num_questions)
         print(f"Processing Question {q_no}...")
         
-        # Ensure we are on the correct question dot
-        if get_current_question_number(driver) != q_no:
-            click_question_dot(driver, q_no)
-            wait_for_active_question(driver, q_no)
-            time.sleep(1.5)
-            
         q_answer = answers.get(str(q_no))
         if q_answer is None or (isinstance(q_answer, str) and q_answer.strip().lower() == "issue"):
             reason = "No answer provided" if q_answer is None else "Answer is marked as 'Issue'"
@@ -1058,116 +1107,155 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
             }
             continue
             
-        active_item = get_active_container(driver, q_no)
-        # Wait up to 10 seconds for inputs inside the active item to be ready
-        wait_for_inputs_ready(driver, active_item, timeout=10.0)
+        question_success = False
+        correctness = "unknown"
         
-        # Try to parse matrix answers if stored as string representation of a list/sequence
-        matrix_answers = None
-        if isinstance(q_answer, str):
-            cleaned = q_answer.strip()
-            # Look for a sequence of True/False/Yes/No/T/F/Y/N values
-            matches = re.findall(r"\b(true|false|yes|no|t|f|y|n)\b", cleaned, re.IGNORECASE)
-            if (cleaned.startswith("[") or "," in cleaned) and len(matches) > 1:
-                matrix_answers = matches
-            elif len(matches) > 1:
-                # If the string contains multiple T/F words separated by spaces or punctuation
-                matrix_answers = matches
-
-        input_success = False
-        
-        # Attempt to input answers, retrying up to 3 times if unsuccessful
-        for attempt in range(3):
+        for q_attempt in range(3):
+            log.info("Answering attempt %d for Question %d...", q_attempt + 1, q_no)
+            
+            # Ensure we are on the correct question dot
+            if get_current_question_number(driver) != q_no:
+                click_question_dot(driver, q_no)
+                wait_for_active_question(driver, q_no)
+                time.sleep(1.5)
+                
             active_item = get_active_container(driver, q_no)
+            # Wait up to 10 seconds for inputs inside the active item to be ready
+            wait_for_inputs_ready(driver, active_item, timeout=10.0)
             
-            # A. Try MCQ
-            if isinstance(q_answer, str) and not matrix_answers and handle_mcq(driver, q_answer):
-                input_success = True
-                
-            # B. Try Matrix (if list of values or parsed list of values)
-            elif (isinstance(q_answer, list) or matrix_answers) and handle_matrix(driver, matrix_answers or q_answer):
-                input_success = True
-                
-            # B2. Try Cloze / Drag-and-drop (if list of values)
-            elif isinstance(q_answer, list) and handle_cloze_and_drag_drop(driver, q_answer, active_item):
-                input_success = True
-                
-            # C. Try Text/Keypad / Cloze / Drag-and-drop (if single string value)
-            elif isinstance(q_answer, str) and (handle_cloze_and_drag_drop(driver, [q_answer], active_item) or handle_text_inputs(driver, q_answer)):
-                input_success = True
-                
-            if input_success:
-                break
-                
-            log.warning("Attempt %d to enter answer for Question %d failed, retrying in 1.5 seconds...", attempt + 1, q_no)
-            time.sleep(1.5)
+            # Try to parse matrix answers if stored as string representation of a list/sequence
+            matrix_answers = None
+            if isinstance(q_answer, str):
+                cleaned = q_answer.strip()
+                # Look for a sequence of True/False/Yes/No/T/F/Y/N values
+                matches = re.findall(r"\b(true|false|yes|no|t|f|y|n)\b", cleaned, re.IGNORECASE)
+                if (cleaned.startswith("[") or "," in cleaned) and len(matches) > 1:
+                    matrix_answers = matches
+                elif len(matches) > 1:
+                    # If the string contains multiple T/F words separated by spaces or punctuation
+                    matrix_answers = matches
+
+            input_success = False
             
-        if not input_success:
-            log.warning("No active input fields could be resolved for Question %d after 3 attempts.", q_no)
-            
-        # Submit the answer
-        submit_btn = None
-        all_btns = []
-        for tag in ["button", "input", "span", "a", "div"]:
-            all_btns.extend(driver.find_elements(By.TAG_NAME, tag))
-            
-        # First try: visible elements with "submit" or "check" in text, value, or class name
-        for btn in all_btns:
-            try:
-                txt = (btn.text or "").strip().lower()
-                val = (btn.get_attribute("value") or "").strip().lower()
-                cls = (btn.get_attribute("class") or "").strip().lower()
-                is_submit = any(w in txt or w in val or w in cls for w in ["submit", "check"])
-                is_checkbox = (btn.get_attribute("type") == "checkbox")
-                if btn.is_displayed() and is_submit and not is_checkbox:
-                    submit_btn = btn
+            # Attempt to input answers, retrying up to 3 times if unsuccessful
+            for attempt in range(3):
+                active_item = get_active_container(driver, q_no)
+                
+                # A. Try MCQ (single choice or multi-select list)
+                if handle_mcq(driver, q_answer, active_item):
+                    input_success = True
+                    
+                # B. Try Matrix (if list of values or parsed list of values)
+                elif (isinstance(q_answer, list) or matrix_answers) and handle_matrix(driver, matrix_answers or q_answer, active_item):
+                    input_success = True
+                    
+                # B2. Try Cloze / Drag-and-drop (if list of values)
+                elif isinstance(q_answer, list) and handle_cloze_and_drag_drop(driver, q_answer, active_item):
+                    input_success = True
+                    
+                # C. Try Text/Keypad / Cloze / Drag-and-drop (if single string value)
+                elif isinstance(q_answer, str) and (handle_cloze_and_drag_drop(driver, [q_answer], active_item) or handle_text_inputs(driver, q_answer, active_item)):
+                    input_success = True
+                    
+                if input_success:
                     break
-            except Exception:
-                pass
+                    
+                log.warning("Attempt %d to enter answer for Question %d failed, retrying in 1.5 seconds...", attempt + 1, q_no)
+                time.sleep(1.5)
                 
-        # Second try: any element (even if not visible/displayed in viewport) with "submit" or "check"
-        if not submit_btn:
+            if not input_success:
+                log.warning("No active input fields could be resolved for Question %d on attempt %d.", q_no, q_attempt + 1)
+                continue
+                
+            # Submit the answer
+            submit_btn = None
+            all_btns = []
+            for tag in ["button", "input", "span", "a", "div"]:
+                all_btns.extend(driver.find_elements(By.TAG_NAME, tag))
+                
+            # Priority 1: Visible elements with text exactly containing "submit answer", "check answer", "submit", "check"
             for btn in all_btns:
                 try:
-                    txt = (btn.text or "").strip().lower()
-                    val = (btn.get_attribute("value") or "").strip().lower()
-                    cls = (btn.get_attribute("class") or "").strip().lower()
-                    is_submit = any(w in txt or w in val or w in cls for w in ["submit", "check"])
-                    is_checkbox = (btn.get_attribute("type") == "checkbox")
-                    if is_submit and not is_checkbox:
-                        submit_btn = btn
-                        break
+                    if btn.is_displayed():
+                        txt = (btn.text or "").strip().lower()
+                        # Exclude any timer toggles or elements containing "timer"
+                        if "timer" in txt:
+                            continue
+                        # Check text content matches
+                        if txt in ("submit answer", "check answer", "submit", "check"):
+                            submit_btn = btn
+                            break
                 except Exception:
                     pass
+                    
+            # Priority 2: Visible elements where the text contains "submit" or "check" (but not "timer")
+            if not submit_btn:
+                for btn in all_btns:
+                    try:
+                        if btn.is_displayed():
+                            txt = (btn.text or "").strip().lower()
+                            if "timer" in txt:
+                                continue
+                            if any(w in txt for w in ["submit", "check"]):
+                                is_checkbox = (btn.get_attribute("type") == "checkbox")
+                                if not is_checkbox:
+                                    submit_btn = btn
+                                    break
+                    except Exception:
+                        pass
+                        
+            # Priority 3: Fallback value/class lookup, strictly avoiding "timer"
+            if not submit_btn:
+                for btn in all_btns:
+                    try:
+                        txt = (btn.text or "").strip().lower()
+                        val = (btn.get_attribute("value") or "").strip().lower()
+                        cls = (btn.get_attribute("class") or "").strip().lower()
+                        if "timer" in txt or "timer" in val or "timer" in cls:
+                            continue
+                        is_submit = any(w in txt or w in val or w in cls for w in ["submit", "check"])
+                        is_checkbox = (btn.get_attribute("type") == "checkbox")
+                        if is_submit and not is_checkbox and "toggle" not in cls and "switch" not in cls:
+                            submit_btn = btn
+                            break
+                    except Exception:
+                        pass
+                    
+            if submit_btn:
+                log.info("Clicking Submit Answer...")
+                driver.execute_script("arguments[0].click();", submit_btn)
+                time.sleep(3.0)  # Wait for submission grading to complete
+            else:
+                log.warning("Submit Answer button not found for Question %d.", q_no)
                 
-        if submit_btn:
-            log.info("Clicking Submit Answer...")
-            driver.execute_script("arguments[0].click();", submit_btn)
-            time.sleep(3.0)  # Wait for submission grading to complete
-        else:
-            log.warning("Submit Answer button not found for Question %d.", q_no)
+            # Determine correctness by looking at the pagination dot classes (with a retry/wait loop)
+            correctness = "unknown"
+            start_check = time.time()
+            while time.time() - start_check < 5.0:
+                dots_after = get_question_dot_buttons(driver)
+                if 1 <= q_no <= len(dots_after):
+                    try:
+                        classes = (dots_after[q_no - 1].get_attribute("class") or "").lower()
+                        if "green" in classes:
+                            correctness = "correct"
+                            break
+                        elif "orange" in classes or "red" in classes:
+                            correctness = "incorrect"
+                            break
+                        elif "purple" in classes or "blue" in classes:
+                            correctness = "partially_correct"
+                            break
+                    except Exception:
+                        pass
+                time.sleep(0.5)
+                
+            if correctness != "unknown":
+                question_success = True
+                break
+                
+            log.warning("Submission verification failed for Question %d on attempt %d. Retrying entire question flow...", q_no, q_attempt + 1)
+            time.sleep(2.0)
             
-        # Determine correctness by looking at the pagination dot classes (with a retry/wait loop)
-        correctness = "unknown"
-        start_check = time.time()
-        while time.time() - start_check < 5.0:
-            dots_after = get_question_dot_buttons(driver)
-            if 1 <= q_no <= len(dots_after):
-                try:
-                    classes = (dots_after[q_no - 1].get_attribute("class") or "").lower()
-                    if "green" in classes:
-                        correctness = "correct"
-                        break
-                    elif "orange" in classes or "red" in classes:
-                        correctness = "incorrect"
-                        break
-                    elif "purple" in classes or "blue" in classes:
-                        correctness = "partially_correct"
-                        break
-                except Exception:
-                    pass
-            time.sleep(0.5)
-                
         # Fallback
         if correctness == "unknown" and get_current_question_number(driver) > q_no:
             correctness = "correct"
