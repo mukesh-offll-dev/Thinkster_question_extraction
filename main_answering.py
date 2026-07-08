@@ -86,9 +86,20 @@ def load_answers_from_db(worksheet_id: str) -> Optional[dict]:
                         val = [str(x) if isinstance(x, bool) else x for x in val]
                     else:
                         val_str = str(val).strip()
-                        if val_str.startswith("[") and val_str.endswith("]"):
+                        # Self-healing: if it starts with "[" but is missing the closing bracket "]", try to repair it
+                        if val_str.startswith("[") and not val_str.endswith("]"):
+                            for suffix in ("]", '"]', '", "True"]', '", "False"]'):
+                                try:
+                                    loaded = json.loads(val_str + suffix)
+                                    if isinstance(loaded, list):
+                                        val = [str(x) if isinstance(x, bool) else x for x in loaded]
+                                        break
+                                except Exception:
+                                    pass
+                                    
+                        if isinstance(val, str) and val.startswith("[") and val.endswith("]"):
                             try:
-                                loaded = json.loads(val_str)
+                                loaded = json.loads(val)
                                 if isinstance(loaded, list):
                                     val = [str(x) if isinstance(x, bool) else x for x in loaded]
                                 else:
@@ -304,7 +315,7 @@ def save_answering_report_to_db(worksheet_id: str, topic_name: str, results: dic
             if q_num > 0:
                 ans_value = ""
                 if ai_res:
-                    match = re.search(r'\[RESULT:\s*(.*?)\]', ai_res, re.IGNORECASE)
+                    match = re.search(r'\[RESULT:\s*(\[.*?\]|.*?)\s*\]', ai_res, re.IGNORECASE)
                     if match:
                         ans_value = match.group(1).strip()
                     elif "issue:" in ai_res.lower() or ai_res.startswith("❌"):
@@ -808,7 +819,7 @@ def run_answering_for_worksheet(topic_name: str, target_ws_id: str, headless: bo
             
         log_msg("Opened worksheet successfully. Answering questions...")
         ws_results = answer_worksheet_questions(driver, target_ws_id, answers)
-        save_answering_report_to_db(target_ws_id, topic_name, ws_results)
+        save_answering_report_to_db(target_ws_id, topic_name, ws_results, answers)
         
         exit_success = exit_worksheet(driver)
         if not exit_success:

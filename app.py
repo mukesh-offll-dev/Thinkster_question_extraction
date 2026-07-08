@@ -152,7 +152,7 @@ def save_ws_answers(ws_id):
             if q_num > 0:
                 ans_value = ""
                 if ai_res:
-                    match = re.search(r'\[RESULT:\s*(.*?)\]', ai_res, re.IGNORECASE)
+                    match = re.search(r'\[RESULT:\s*(\[.*?\]|.*?)\s*\]', ai_res, re.IGNORECASE)
                     if match:
                         ans_value = match.group(1).strip()
                     elif "issue:" in ai_res.lower() or ai_res.startswith("❌"):

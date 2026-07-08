@@ -543,22 +543,68 @@ def get_active_container(driver: WebDriver, q_no: int) -> Optional[WebElement]:
     while time.time() - start_time < 5.0:
         try:
             items = driver.find_elements(By.CSS_SELECTOR, ".learnosity-item")
-            if len(items) >= q_no:
-                el = items[q_no - 1]
-                style = el.get_attribute("style") or ""
-                if "visibility: visible" in style or "opacity: 1" in style:
-                    return el
+            if items:
+                # 1. Check for active/lrn-active class
+                for el in items:
+                    classes = el.get_attribute("class") or ""
+                    if "lrn-active" in classes or "active" in classes:
+                        return el
+                # 2. Check visibility in style
+                for el in items:
+                    style = el.get_attribute("style") or ""
+                    if "visibility: visible" in style or "opacity: 1" in style:
+                        return el
+                # 3. Fallback to standard index
+                if len(items) >= q_no:
+                    return items[q_no - 1]
+                # 4. Fallback to single item
+                if len(items) == 1:
+                    return items[0]
         except Exception:
             pass
         time.sleep(0.1)
         
     try:
         items = driver.find_elements(By.CSS_SELECTOR, ".learnosity-item")
-        if len(items) >= q_no:
-            return items[q_no - 1]
+        if items:
+            for el in items:
+                classes = el.get_attribute("class") or ""
+                if "lrn-active" in classes or "active" in classes:
+                    return el
+            if len(items) >= q_no:
+                return items[q_no - 1]
+            return items[0]
     except Exception:
         pass
     return None
+
+def wait_for_inputs_ready(driver: WebDriver, active_item: WebElement, timeout: float = 10.0) -> bool:
+    """Wait for at least one interactive input element to be displayed within the active container."""
+    if not active_item:
+        return False
+    start_time = time.time()
+    selectors = [
+        ".lrn-mcq-option", "[class*='mcq-option']",
+        "input", "textarea", "select",
+        ".mq-editable-field", ".lrn-formula-input",
+        ".lrn_cloze_response", ".lrn_dropzone", ".lrn_assoc_col2",
+        ".lrn_btn_drag", "[draggable='true']"
+    ]
+    while time.time() - start_time < timeout:
+        for selector in selectors:
+            try:
+                elements = active_item.find_elements(By.CSS_SELECTOR, selector)
+                for el in elements:
+                    if el.is_displayed():
+                        # Additional check: if it is standard input, ensure it is enabled
+                        if el.tag_name in ("input", "textarea", "select") and not el.get_attribute("readonly"):
+                            return True
+                        elif el.tag_name not in ("input", "textarea", "select"):
+                            return True
+            except Exception:
+                pass
+        time.sleep(0.5)
+    return False
 
 
 def handle_cloze_and_drag_drop(driver: WebDriver, answers: list, active_item: WebElement) -> bool:
@@ -939,9 +985,20 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
                 val = [str(x) if isinstance(x, bool) else x for x in val]
             else:
                 val_str = str(val).strip()
-                if val_str.startswith("[") and val_str.endswith("]"):
+                # Self-healing: if it starts with "[" but is missing the closing bracket "]", try to repair it
+                if val_str.startswith("[") and not val_str.endswith("]"):
+                    for suffix in ("]", '"]', '", "True"]', '", "False"]'):
+                        try:
+                            loaded = json.loads(val_str + suffix)
+                            if isinstance(loaded, list):
+                                val = [str(x) if isinstance(x, bool) else x for x in loaded]
+                                break
+                        except Exception:
+                            pass
+
+                if isinstance(val, str) and val.startswith("[") and val.endswith("]"):
                     try:
-                        loaded = json.loads(val_str)
+                        loaded = json.loads(val)
                         if isinstance(loaded, list):
                             val = [str(x) if isinstance(x, bool) else x for x in loaded]
                         else:
@@ -1002,6 +1059,9 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
             continue
             
         active_item = get_active_container(driver, q_no)
+        # Wait up to 10 seconds for inputs inside the active item to be ready
+        wait_for_inputs_ready(driver, active_item, timeout=10.0)
+        
         # Try to parse matrix answers if stored as string representation of a list/sequence
         matrix_answers = None
         if isinstance(q_answer, str):
@@ -1016,24 +1076,34 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
 
         input_success = False
         
-        # A. Try MCQ
-        if isinstance(q_answer, str) and not matrix_answers and handle_mcq(driver, q_answer):
-            input_success = True
+        # Attempt to input answers, retrying up to 3 times if unsuccessful
+        for attempt in range(3):
+            active_item = get_active_container(driver, q_no)
             
-        # B. Try Matrix (if list of values or parsed list of values)
-        elif (isinstance(q_answer, list) or matrix_answers) and handle_matrix(driver, matrix_answers or q_answer):
-            input_success = True
-            
-        # B2. Try Cloze / Drag-and-drop (if list of values)
-        elif isinstance(q_answer, list) and handle_cloze_and_drag_drop(driver, q_answer, active_item):
-            input_success = True
-            
-        # C. Try Text/Keypad / Cloze / Drag-and-drop (if single string value)
-        elif isinstance(q_answer, str) and (handle_cloze_and_drag_drop(driver, [q_answer], active_item) or handle_text_inputs(driver, q_answer)):
-            input_success = True
+            # A. Try MCQ
+            if isinstance(q_answer, str) and not matrix_answers and handle_mcq(driver, q_answer):
+                input_success = True
+                
+            # B. Try Matrix (if list of values or parsed list of values)
+            elif (isinstance(q_answer, list) or matrix_answers) and handle_matrix(driver, matrix_answers or q_answer):
+                input_success = True
+                
+            # B2. Try Cloze / Drag-and-drop (if list of values)
+            elif isinstance(q_answer, list) and handle_cloze_and_drag_drop(driver, q_answer, active_item):
+                input_success = True
+                
+            # C. Try Text/Keypad / Cloze / Drag-and-drop (if single string value)
+            elif isinstance(q_answer, str) and (handle_cloze_and_drag_drop(driver, [q_answer], active_item) or handle_text_inputs(driver, q_answer)):
+                input_success = True
+                
+            if input_success:
+                break
+                
+            log.warning("Attempt %d to enter answer for Question %d failed, retrying in 1.5 seconds...", attempt + 1, q_no)
+            time.sleep(1.5)
             
         if not input_success:
-            log.warning("No active input fields could be resolved for Question %d.", q_no)
+            log.warning("No active input fields could be resolved for Question %d after 3 attempts.", q_no)
             
         # Submit the answer
         submit_btn = None
@@ -1077,20 +1147,26 @@ def answer_worksheet_questions(driver: WebDriver, worksheet_id: str, answers: di
         else:
             log.warning("Submit Answer button not found for Question %d.", q_no)
             
-        # Determine correctness by looking at the pagination dot classes
+        # Determine correctness by looking at the pagination dot classes (with a retry/wait loop)
         correctness = "unknown"
-        dots_after = get_question_dot_buttons(driver)
-        if 1 <= q_no <= len(dots_after):
-            try:
-                classes = (dots_after[q_no - 1].get_attribute("class") or "").lower()
-                if "green" in classes:
-                    correctness = "correct"
-                elif "orange" in classes or "red" in classes:
-                    correctness = "incorrect"
-                elif "purple" in classes or "blue" in classes:
-                    correctness = "partially_correct"
-            except Exception:
-                pass
+        start_check = time.time()
+        while time.time() - start_check < 5.0:
+            dots_after = get_question_dot_buttons(driver)
+            if 1 <= q_no <= len(dots_after):
+                try:
+                    classes = (dots_after[q_no - 1].get_attribute("class") or "").lower()
+                    if "green" in classes:
+                        correctness = "correct"
+                        break
+                    elif "orange" in classes or "red" in classes:
+                        correctness = "incorrect"
+                        break
+                    elif "purple" in classes or "blue" in classes:
+                        correctness = "partially_correct"
+                        break
+                except Exception:
+                    pass
+            time.sleep(0.5)
                 
         # Fallback
         if correctness == "unknown" and get_current_question_number(driver) > q_no:
