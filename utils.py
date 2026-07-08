@@ -378,11 +378,11 @@ def exit_worksheet(driver: WebDriver) -> bool:
     log.info("Attempting to exit the worksheet...")
     print("\nExiting current worksheet...")
 
-    # Wait and check completion flow in a unified loop (up to 15 seconds)
+    # Wait and check completion flow in a unified loop (up to 30 seconds)
     start_completion_wait = time.time()
     clicked_keep_learning = False
     
-    while time.time() - start_completion_wait < 15.0:
+    while time.time() - start_completion_wait < 30.0:
         try:
             # 1. Check for Keep Learning first (direct completion or after Submit As Is click)
             js_keep_learning = """
@@ -424,10 +424,10 @@ def exit_worksheet(driver: WebDriver) -> bool:
         time.sleep(0.5)
 
     if clicked_keep_learning:
-        # Wait up to 15 seconds for Topic/Dashboard page to load and be visible
+        # Wait up to 20 seconds for Topic/Dashboard page to load and be visible
         start_topic_wait = time.time()
         topic_loaded = False
-        while time.time() - start_topic_wait < 15.0:
+        while time.time() - start_topic_wait < 20.0:
             try:
                 elements = driver.find_elements(By.CSS_SELECTOR, "[class*='sidebar'], [class*='topic'], .lrn-btn, [class*='dashboard']")
                 visible_elements = [el for el in elements if el.is_displayed()]
@@ -442,7 +442,7 @@ def exit_worksheet(driver: WebDriver) -> bool:
             print("Topic Selection page loaded.")
         else:
             log.warning("Timed out waiting for Topic Selection page to load.")
-        time.sleep(2.0)
+        time.sleep(3.0)
         return True
     
     js_code = """
