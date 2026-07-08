@@ -268,6 +268,18 @@
 
         .badge-issues { color: var(--danger); font-weight: 700; }
         .badge-passed { color: var(--success); font-weight: 700; }
+        .badge-auto-ans {
+            background-color: var(--success-light);
+            color: #047857;
+            border: 1px solid #A7F3D0;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2.5px 6.5px;
+            border-radius: 4px;
+            display: inline-flex;
+            align-items: center;
+            margin-left: 8px;
+        }
 
         /* TOAST */
         .toast {
@@ -493,6 +505,8 @@
                     if (activeTab === 'answering') {
                         updateTopicFilterDropdown();
                         renderAnsweringReports(answeringData);
+                    } else if (activeTab === 'analysis') {
+                        renderWorksheets(worksheetsData);
                     }
                 })
                 .catch(err => {
@@ -516,11 +530,18 @@
             list.forEach(ws => {
                 const card = document.createElement("div");
                 card.className = "worksheet-card glass-card";
+                
+                const isAutoAnswered = answeringData.some(ans => ans.worksheet_id === ws.worksheet_id);
+                const autoAnsLabel = isAutoAnswered 
+                    ? `<span class="badge-auto-ans">Auto Ans</span>`
+                    : '';
+
                 card.innerHTML = `
                     <div class="worksheet-card-header">
-                        <div style="display:flex;align-items:center;gap:12px;">
+                        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
                             <input type="checkbox" class="ws-checkbox" value="${ws.worksheet_id}" onchange="updateSelection()" onclick="event.stopPropagation()">
                             <span class="worksheet-id-title" onclick="navigateToDetail('${escapeHtml(ws.worksheet_id)}')">${escapeHtml(ws.worksheet_id)}</span>
+                            ${autoAnsLabel}
                         </div>
                         <div style="display:flex;align-items:center;gap:8px;">
                             <button class="delete-icon-btn" onclick="deleteSingleWorksheet(event,'${escapeHtml(ws.worksheet_id)}')" title="Delete">

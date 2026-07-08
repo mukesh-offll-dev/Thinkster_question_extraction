@@ -67,24 +67,68 @@ def get_question_number(filename):
         return int(match.group(1))
     return 0
 
+def resolve_and_repair_topic_name(worksheet_id, current_topic_name=None):
+    if current_topic_name and current_topic_name != "Unknown Topic":
+        return current_topic_name
+        
+    ws_answers_coll = db[config.MONGO_ANSWERS_COLLECTION]
+    
+    # Try topic.txt first
+    screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshots")
+    topic_path = os.path.join(screenshots_dir, worksheet_id, "topic.txt")
+    if os.path.exists(topic_path):
+        try:
+            with open(topic_path, "r", encoding="utf-8") as f:
+                t_name = f.read().strip()
+                if t_name and t_name != "Unknown Topic":
+                    # Repair in DB
+                    ws_answers_coll.update_one({"worksheetID": worksheet_id}, {"$set": {"topicName": t_name}}, upsert=True)
+                    return t_name
+        except Exception:
+            pass
+
+    # Try existing DB (WS_answers collection)
+    try:
+        ws_ans = ws_answers_coll.find_one({"worksheetID": worksheet_id})
+        if ws_ans and ws_ans.get("topicName") and ws_ans["topicName"] != "Unknown Topic":
+            # Write to topic.txt to cache it locally
+            try:
+                ws_dir = os.path.join(screenshots_dir, worksheet_id)
+                os.makedirs(ws_dir, exist_ok=True)
+                with open(topic_path, "w", encoding="utf-8") as f:
+                    f.write(ws_ans["topicName"])
+            except Exception:
+                pass
+            return ws_ans["topicName"]
+    except Exception:
+        pass
+            
+    # Try Answering_Report
+    try:
+        answering_report_coll = db["Answering_Report"]
+        ar = answering_report_coll.find_one({"worksheet_id": worksheet_id})
+        if ar and ar.get("topic_name") and ar["topic_name"] != "Unknown Topic":
+            t_name = ar["topic_name"]
+            # Repair in DB and write topic.txt
+            ws_answers_coll.update_one({"worksheetID": worksheet_id}, {"$set": {"topicName": t_name}}, upsert=True)
+            try:
+                ws_dir = os.path.join(screenshots_dir, worksheet_id)
+                os.makedirs(ws_dir, exist_ok=True)
+                with open(topic_path, "w", encoding="utf-8") as f:
+                    f.write(t_name)
+            except Exception:
+                pass
+            return t_name
+    except Exception:
+        pass
+        
+    return "Unknown Topic"
+
 def save_ws_answers(ws_id):
     try:
         ws_answers_coll = db[config.MONGO_ANSWERS_COLLECTION]
         
-        # Read the topic name from topic.txt if it exists
-        topic_name = "Unknown Topic"
-        screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshots")
-        topic_path = os.path.join(screenshots_dir, ws_id, "topic.txt")
-        if os.path.exists(topic_path):
-            try:
-                with open(topic_path, "r", encoding="utf-8") as f:
-                    topic_name = f.read().strip()
-            except Exception as e:
-                print(f"Error reading topic.txt for {ws_id}: {e}")
-        else:
-            existing_ws_ans = ws_answers_coll.find_one({"worksheetID": ws_id})
-            if existing_ws_ans and existing_ws_ans.get("topicName"):
-                topic_name = existing_ws_ans["topicName"]
+        topic_name = resolve_and_repair_topic_name(ws_id)
         
         # Query Worksheet_Report for all questions of this worksheet
         report_docs = list(collection.find({"worksheet_id": ws_id}))
@@ -1128,7 +1172,15 @@ def fetch_worksheets():
         if from_answering:
             report_coll = db["Worksheet_Report"]
             valid_ws_ids = set(report_coll.distinct("worksheet_id"))
-            worksheets = [ws for ws in worksheets if ws["id"] in valid_ws_ids]
+            
+            answering_report_coll = db["Answering_Report"]
+            answered_ws_ids = set(answering_report_coll.distinct("worksheet_id"))
+            
+            worksheets = [ws for ws in worksheets if ws["id"] in valid_ws_ids and ws["id"] not in answered_ws_ids]
+        else:
+            report_coll = db["Worksheet_Report"]
+            processed_ws_ids = set(report_coll.distinct("worksheet_id"))
+            worksheets = [ws for ws in worksheets if ws["id"] not in processed_ws_ids]
             
         return jsonify({"status": "success", "worksheets": worksheets})
     except Exception as e:
@@ -1263,6 +1315,9 @@ def get_db_worksheets():
             {"$sort": {"worksheet_id": 1}}
         ]
         results = list(collection.aggregate(pipeline))
+        # Repair topic names on-the-fly
+        for r in results:
+            r["topic_name"] = resolve_and_repair_topic_name(r["worksheet_id"], r["topic_name"])
         return jsonify(results)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1272,10 +1327,8 @@ def get_db_worksheet_details(worksheet_id):
     try:
         docs = list(collection.find({"worksheet_id": worksheet_id}))
         
-        # Fetch topic name
-        ws_answers_coll = db[config.MONGO_ANSWERS_COLLECTION]
-        ws_ans = ws_answers_coll.find_one({"worksheetID": worksheet_id})
-        topic_name = ws_ans.get("topicName", "Unknown Topic") if ws_ans else "Unknown Topic"
+        # Fetch and repair topic name
+        topic_name = resolve_and_repair_topic_name(worksheet_id)
         
         for d in docs:
             d["_id"] = str(d["_id"])
@@ -1300,6 +1353,15 @@ def get_db_answering_reports():
             "partially_correct_count": 1,
             "skipped_count": 1
         }))
+        # Repair topic names on-the-fly
+        for r in results:
+            if r.get("topic_name") == "Unknown Topic" or not r.get("topic_name"):
+                r["topic_name"] = resolve_and_repair_topic_name(r["worksheet_id"])
+                if r["topic_name"] != "Unknown Topic":
+                    try:
+                        answering_report_coll.update_one({"worksheet_id": r["worksheet_id"]}, {"$set": {"topic_name": r["topic_name"]}})
+                    except Exception:
+                        pass
         return jsonify(results)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1313,6 +1375,16 @@ def get_db_answering_report_details(worksheet_id):
         if not doc:
             return jsonify({"error": f"No answering report found for worksheet {worksheet_id}."}), 404
         doc["_id"] = str(doc["_id"])
+        
+        # Repair topic name on-the-fly
+        if doc.get("topic_name") == "Unknown Topic" or not doc.get("topic_name"):
+            doc["topic_name"] = resolve_and_repair_topic_name(worksheet_id)
+            if doc["topic_name"] != "Unknown Topic":
+                try:
+                    answering_report_coll.update_one({"worksheet_id": worksheet_id}, {"$set": {"topic_name": doc["topic_name"]}})
+                except Exception:
+                    pass
+                    
         if "created_at" in doc and isinstance(doc["created_at"], datetime):
             doc["created_at"] = doc["created_at"].strftime("%Y-%m-%d %H:%M:%S")
         return jsonify(doc)
@@ -1720,6 +1792,18 @@ def delete_worksheets():
             answering_report_coll.delete_many({"worksheet_id": {"$in": worksheet_ids}})
         except Exception as db_err:
             print(f"Failed to delete from Answering_Report: {db_err}")
+            
+        # Also delete corresponding screenshot folders
+        try:
+            import shutil
+            screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshots")
+            for ws_id in worksheet_ids:
+                ws_dir = os.path.join(screenshots_dir, ws_id)
+                if os.path.exists(ws_dir) and os.path.isdir(ws_dir):
+                    shutil.rmtree(ws_dir)
+                    print(f"Deleted screenshot folder for worksheet: {ws_id}")
+        except Exception as file_err:
+            print(f"Failed to delete screenshot folder: {file_err}")
             
         return jsonify({"status": "deleted", "count": res.deleted_count})
     except Exception as e:

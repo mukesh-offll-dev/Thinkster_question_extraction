@@ -259,16 +259,28 @@ def save_answering_report_to_db(worksheet_id: str, topic_name: str, results: dic
         resolved_topic_name = topic_name
         screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshots")
         topic_path = os.path.join(screenshots_dir, worksheet_id, "topic.txt")
-        if os.path.exists(topic_path):
+        
+        if not resolved_topic_name or resolved_topic_name == "Unknown Topic":
+            if os.path.exists(topic_path):
+                try:
+                    with open(topic_path, "r", encoding="utf-8") as f:
+                        resolved_topic_name = f.read().strip()
+                except Exception:
+                    pass
+            else:
+                existing_ws_ans = ws_answers_coll.find_one({"worksheetID": worksheet_id})
+                if existing_ws_ans and existing_ws_ans.get("topicName") and existing_ws_ans["topicName"] != "Unknown Topic":
+                    resolved_topic_name = existing_ws_ans["topicName"]
+                    
+        # Write/ensure topic.txt is there if resolved_topic_name is valid
+        if resolved_topic_name and resolved_topic_name != "Unknown Topic":
             try:
-                with open(topic_path, "r", encoding="utf-8") as f:
-                    resolved_topic_name = f.read().strip()
+                ws_dir = os.path.join(screenshots_dir, worksheet_id)
+                os.makedirs(ws_dir, exist_ok=True)
+                with open(topic_path, "w", encoding="utf-8") as f:
+                    f.write(resolved_topic_name)
             except Exception:
                 pass
-        else:
-            existing_ws_ans = ws_answers_coll.find_one({"worksheetID": worksheet_id})
-            if existing_ws_ans and existing_ws_ans.get("topicName"):
-                resolved_topic_name = existing_ws_ans["topicName"]
                 
         # Query Worksheet_Report for all questions of this worksheet
         report_docs = list(worksheet_report_coll.find({"worksheet_id": worksheet_id}))

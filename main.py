@@ -153,6 +153,11 @@ def run_automation() -> None:
             if os.path.exists(screenshot_dir) and os.path.isdir(screenshot_dir):
                 print(f"Folder '{screenshot_dir}' already exists. Skipping worksheet.\n")
                 log.info("Worksheet %s already processed (folder exists). Skipping.", ws_id)
+                try:
+                    with open(os.path.join(screenshot_dir, "topic.txt"), "w", encoding="utf-8") as f:
+                        f.write(topic_name)
+                except Exception:
+                    pass
                 continue
                 
             # Re-locate and expand topic to ensure it is open and visible
@@ -195,6 +200,11 @@ def run_automation() -> None:
             os.makedirs(screenshot_dir, exist_ok=True)
             print(f"Created folder: {screenshot_dir}")
             log.info("Created folder for screenshots: %s", screenshot_dir)
+            try:
+                with open(os.path.join(screenshot_dir, "topic.txt"), "w", encoding="utf-8") as f:
+                    f.write(topic_name)
+            except Exception as e:
+                log.warning("Failed to write topic.txt: %s", e)
             
             # Click Start or Resume to open the worksheet
             success = finder._click_start(matching_card, topic_name, ws_title)
@@ -451,6 +461,11 @@ def extract_screenshots_for_worksheet(topic_name: str, target_ws_id: str, headle
         
         screenshot_dir = os.path.join("screenshots", target_ws_id)
         os.makedirs(screenshot_dir, exist_ok=True)
+        try:
+            with open(os.path.join(screenshot_dir, "topic.txt"), "w", encoding="utf-8") as f:
+                f.write(topic_name)
+        except Exception as e:
+            log_msg(f"[WARN] Failed to write topic.txt: {e}")
 
         # Re-collect cards and find the matching card
         if is_sidebar:
@@ -540,6 +555,11 @@ def extract_screenshots_for_worksheets_batch(topic_name: str, target_ws_ids: lis
             # Create screenshots directory
             screenshot_dir = os.path.join("screenshots", target_ws_id)
             os.makedirs(screenshot_dir, exist_ok=True)
+            try:
+                with open(os.path.join(screenshot_dir, "topic.txt"), "w", encoding="utf-8") as f:
+                    f.write(topic_name)
+            except Exception as e:
+                log_msg(f"[WARN] Failed to write topic.txt: {e}")
             
             try:
                 finder = TopicWorksheetFinder(driver)
